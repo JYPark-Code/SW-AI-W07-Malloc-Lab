@@ -71,8 +71,8 @@ int mm_init(void)
     heap_listp = mem_sbrk(16);
 
     /* 메모리 할당이 불가능할 때 */
-    // if (heap_listp == (void *)-1)
-    //     return -1;
+    if (heap_listp == (void *)-1)
+        return -1;
 
     // heap_listp + 0  → padding
     PUT((char *)(heap_listp),  PACK(0,0)); // padding
@@ -197,8 +197,8 @@ static void *extend_heap(size_t size)
         return NULL;
 
     char *bp = raw;
-    PUT(HDRP(bp), PACK(size, 0));
-    PUT(FTRP(bp), PACK(size, 0));
+    PUT(HDRP(bp), PACK(newsize, 0));
+    PUT(FTRP(bp), PACK(newsize, 0));
     PUT((char *)(FTRP(bp)) + 4, PACK(0, 1)); // 크기 0, allocated
 
     return bp;

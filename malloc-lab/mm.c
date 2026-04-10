@@ -45,8 +45,8 @@ team_t team = {
 #define CHUNKSIZE (1<<12)  // 4096 bytes
 
 #define PACK(size, alloc) ((size | alloc)) /* 메모리 사이즈와 점유 여부 - 하위 3비트는 비고, 최하위에 OR연산으로 점유 여부 표시 */
-#define GET_SIZE(p) (*(unsigned int *) (p) & ~0x7) /* 사이즈만 추출 (하위 3비트 소거) - not 0x7과 AND 연산 */
-#define GET_ALLOC(p) (*(unsigned int *)(p) & 0x1) /* 점유 여부만 추출 (최하위 1비트 추출) - 0x1과 AND 연산 */
+#define GET_SIZE(p) (*(unsigned int *) (p) & ~0x7U) /* 사이즈만 추출 (하위 3비트 소거) - not 0x7과 AND 연산 */
+#define GET_ALLOC(p) (*(unsigned int *)(p) & 0x1U) /* 점유 여부만 추출 (최하위 1비트 추출) - 0x1과 AND 연산 */
 #define HDRP(ptr) ((char *)(ptr) - 4) /* 헤더 찾기 (힙 탐색) | Header (4byte) | payload | */
 #define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr))) /* ptr에서 다음 블록 payload 포인터 */
 #define FTRP(ptr) ((char *) NEXT_BLKP(ptr) - 8) /* 현재 블록 footer 주소 */
@@ -71,8 +71,8 @@ int mm_init(void)
     heap_listp = mem_sbrk(16);
 
     /* 메모리 할당이 불가능할 때 */
-    if (heap_listp == (void *)-1)
-        return -1;
+    // if (heap_listp == (void *)-1)
+    //     return -1;
 
     // heap_listp + 0  → padding
     PUT((char *)(heap_listp),  PACK(0,0)); // padding
@@ -108,17 +108,18 @@ void *mm_malloc(size_t size)
         return NULL;
     }
 
-    void *bp = find_fit(size);
+    size_t asize = ALIGN(size + 8);  // 실제 블록 크기
+    void *bp = find_fit(asize);
 
     if(bp == NULL){
-        bp = extend_heap(size);
+        bp = extend_heap(asize);
     }
 
     if(bp == NULL){
         return NULL;
     }
 
-    place(bp, size);
+    place(bp, asize);
     return bp;
 }
 
@@ -157,7 +158,7 @@ static void *find_fit(size_t size)
 { 
     for (char *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
     // 빈 블록 찾기
-     if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) > size){
+     if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= size){
         return bp;
      }   
     }
@@ -168,23 +169,36 @@ static void *find_fit(size_t size)
 
 // 2. 블록 배치 (header/footer 업데이트)
 static void place(void *bp, size_t size) 
-{
-    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+{   
+    // split 함수 구현
+    size_t old_size = GET_SIZE(HDRP(bp));
+
+    if (GET_SIZE(HDRP(bp)) - size >= 16){
+        PUT(HDRP(bp), PACK(size, 1));
+        PUT(FTRP(bp), PACK(size, 1));
+        PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+    } else {
+        PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+        PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+    }
+
 }
 
 // 3. 힙 확장
 static void *extend_heap(size_t size)
 {   
-    size_t new_size = ALIGN(size) + 8;
-    char *raw = (char *)mem_sbrk(new_size);
+    // size_t new_size = ALIGN(size) + 8;
+    size_t newsize = (size < CHUNKSIZE) ? CHUNKSIZE : size;
+    char *raw = (char *)mem_sbrk(newsize);
+    // char *raw = (char *)mem_sbrk(size);
 
     if (raw == (void *)-1)
         return NULL;
 
     char *bp = raw;
-    PUT(HDRP(bp), PACK(new_size, 0));
-    PUT(FTRP(bp), PACK(new_size, 0));
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
     PUT((char *)(FTRP(bp)) + 4, PACK(0, 1)); // 크기 0, allocated
 
     return bp;

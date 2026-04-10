@@ -28,7 +28,7 @@ team_t team = {
     /* First member's full name */
     "Ji Yong Park",
     /* First member's email address */
-    "",
+    "jypark@krafton.com",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
@@ -42,14 +42,16 @@ team_t team = {
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 /* 새로 만든 매크로 */
+#define CHUNKSIZE (1<<12)  // 4096 bytes
+
 #define PACK(size, alloc) ((size | alloc)) /* 메모리 사이즈와 점유 여부 - 하위 3비트는 비고, 최하위에 OR연산으로 점유 여부 표시 */
-#define GET_SIZE(p) (*(size_t *) (p) & ~0x7) /* 사이즈만 추출 (하위 3비트 소거) - not 0x7과 AND 연산 */
-#define GET_ALLOC(p) (*(size_t *)(p) & 0x1) /* 점유 여부만 추출 (최하위 1비트 추출) - 0x1과 AND 연산 */
+#define GET_SIZE(p) (*(unsigned int *) (p) & ~0x7) /* 사이즈만 추출 (하위 3비트 소거) - not 0x7과 AND 연산 */
+#define GET_ALLOC(p) (*(unsigned int *)(p) & 0x1) /* 점유 여부만 추출 (최하위 1비트 추출) - 0x1과 AND 연산 */
 #define HDRP(ptr) ((char *)(ptr) - 4) /* 헤더 찾기 (힙 탐색) | Header (4byte) | payload | */
 #define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr))) /* ptr에서 다음 블록 payload 포인터 */
 #define FTRP(ptr) ((char *) NEXT_BLKP(ptr) - 8) /* 현재 블록 footer 주소 */
 #define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 */
-#define PUT(p, val) (*(size_t *)(p) = (val)) /* p 주소에 값을 쓰기 */
+#define PUT(p, val) (*(unsigned int *)(p) = (val)) /* p 주소에 값을 쓰기 */
 
 
 static char *heap_listp;  // 전역변수
@@ -82,6 +84,10 @@ int mm_init(void)
     PUT((char *)(heap_listp) + 12, PACK(0, 1)); // 크기 0, allocated
 
     heap_listp += 8;  // prologue payload 위치로 이동
+
+    if (extend_heap(CHUNKSIZE) == NULL)
+        return -1;
+
     return 0;
 }
 
@@ -151,7 +157,7 @@ static void *find_fit(size_t size)
 { 
     for (char *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
     // 빈 블록 찾기
-     if (!GET_ALLOC(bp) && GET_SIZE(HDRP(bp)) > size){
+     if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) > size){
         return bp;
      }   
     }
@@ -163,10 +169,8 @@ static void *find_fit(size_t size)
 // 2. 블록 배치 (header/footer 업데이트)
 static void place(void *bp, size_t size) 
 {
-    if (GET_SIZE(HDRP(bp)) > size){
-        PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-        PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-    } 
+    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
 }
 
 // 3. 힙 확장
@@ -178,7 +182,7 @@ static void *extend_heap(size_t size)
     if (raw == (void *)-1)
         return NULL;
 
-    char *bp = raw + 4;
+    char *bp = raw;
     PUT(HDRP(bp), PACK(new_size, 0));
     PUT(FTRP(bp), PACK(new_size, 0));
     PUT((char *)(FTRP(bp)) + 4, PACK(0, 1)); // 크기 0, allocated

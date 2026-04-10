@@ -53,12 +53,33 @@ team_t team = {
 #define FTRP(ptr) ((char *) NEXT_BLKP(ptr) - 8) /* 현재 블록 footer 주소 */
 #define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 */
 
+#define PUT(p, val) (*(size_t *)(p) = (val)) /* p 주소에 값을 쓰기 */
+
+
+static char *heap_listp;  // 전역변수
 
 /*
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
+    /* 처음에 16 byte 할당하기 */
+    heap_listp = mem_sbrk(16);
+
+    /* 메모리 할당이 불가능할 때 */
+    if (heap_listp == (void *)-1)
+        return -1;
+
+    // heap_listp + 0  → padding
+    PUT((char *)(heap_listp),  PACK(0,0)); // padding
+    // heap_listp + 4  → prologue header
+    PUT((char *)(heap_listp) + 4,  PACK(8, 1));  // prologue header
+    // heap_listp + 8  → prologue footer
+    PUT((char *)(heap_listp) + 8,  PACK(8, 1));  // prologue footer
+    // heap_listp + 12 → epilogue header
+    PUT((char *)(heap_listp) + 12, PACK(0, 1)); // 크기 0, allocated
+
+    heap_listp += 8;  // prologue payload 위치로 이동
     return 0;
 }
 

@@ -54,6 +54,12 @@ team_t team = {
 
 static char *heap_listp;  // 전역변수
 
+/* forward declaration */
+static void *find_fit(size_t size);
+static void place(void *bp, size_t size);
+static void *extend_heap(size_t size);
+static void *coalesce(void *ptr);
+
 /*
  * mm_init - initialize the malloc package.
  */
@@ -117,6 +123,7 @@ void mm_free(void *ptr)
 {
     PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
     PUT(FTRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
+    coalesce(ptr);
 }
 
 /*
@@ -156,8 +163,10 @@ static void *find_fit(size_t size)
 // 2. 블록 배치 (header/footer 업데이트)
 static void place(void *bp, size_t size) 
 {
-    PUT(HDRP(bp), PACK(size, 1));
-    PUT(FTRP(bp), PACK(size, 1));
+    if (GET_SIZE(HDRP(bp)) > size){
+        PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+        PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+    } 
 }
 
 // 3. 힙 확장
@@ -176,4 +185,40 @@ static void *extend_heap(size_t size)
 
     return bp;
 
+}
+
+// 4. free - 4가지 경우 - coalesce 하기
+static void *coalesce(void *ptr)
+{
+
+    // 1. 양쪽이 다 점유되어있는 경우 
+    if(GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
+        return ptr;
+    }
+
+    size_t curr_size = GET_SIZE(HDRP(ptr));
+    size_t prev_size = GET_SIZE(HDRP(PREV_BLKP(ptr)));
+    size_t next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+
+
+    // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
+    if(GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
+        size_t merge_size = curr_size + prev_size;
+        PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
+        PUT(FTRP(ptr), PACK(merge_size, 0));
+        return PREV_BLKP(ptr);
+    }
+    // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
+    if(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
+        size_t merge_size = curr_size + next_size;
+        PUT(HDRP(ptr), PACK(merge_size, 0));
+        PUT(FTRP(ptr), PACK(merge_size, 0));
+        return ptr;
+    }
+
+    // 4. 양쪽 다 free인 경우.
+    size_t merge_size = curr_size + prev_size + next_size;
+    PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
+    PUT(FTRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
+    return PREV_BLKP(ptr);
 }

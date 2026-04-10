@@ -115,6 +115,8 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+    PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
+    PUT(FTRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
 }
 
 /*
@@ -156,7 +158,6 @@ static void place(void *bp, size_t size)
 {
     PUT(HDRP(bp), PACK(size, 1));
     PUT(FTRP(bp), PACK(size, 1));
-
 }
 
 // 3. 힙 확장

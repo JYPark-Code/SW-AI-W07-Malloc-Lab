@@ -39,12 +39,20 @@ team_t team = {
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7) /* 메모리 할당 및 Align하기 */
-
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
+/* 새로 만든 매크로 */
 #define PACK(size, alloc) ((size | alloc)) /* 메모리 사이즈와 점유 여부 - 하위 3비트는 비고, 최하위에 OR연산으로 점유 여부 표시 */
 #define GET_SIZE(p) (*(size_t *) (p) & ~0x7) /* 사이즈만 추출 (하위 3비트 소거) - not 0x7과 AND 연산 */
-#define GET_ALLOC(p) (*(size_t *)(p) & 0x1) /* 메모리만 추출 (최하위 1비트 추출) - 0x1과 AND 연산 */
+#define GET_ALLOC(p) (*(size_t *)(p) & 0x1) /* 점유 여부만 추출 (최하위 1비트 추출) - 0x1과 AND 연산 */
+#define HDRP(ptr) ((char *)(ptr) - 4) /* 헤더 찾기 (힙 탐색) | Header (4byte) | payload | */
+
+#define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr))) /* ptr에서 다음 블록 payload 포인터 */
+#define PREV_BLKP(ptr)  /* 이전 블록 payload 포인터 */
+
+#define FTRP(ptr) ((char *) NEXT_BLKP(ptr) - 8) /* 현재 블록 footer 주소 */
+#define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 */
+
 
 /*
  * mm_init - initialize the malloc package.

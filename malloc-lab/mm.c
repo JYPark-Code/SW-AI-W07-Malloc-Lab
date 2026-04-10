@@ -85,15 +85,29 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-    int newsize = ALIGN(size + SIZE_T_SIZE);
-    void *p = mem_sbrk(newsize);
-    if (p == (void *)-1)
+    /*
+    1. size가 0이면 → return NULL
+    2. 빈 블록 찾기 (first fit 탐색)
+        → 찾으면 → 그 블록에 배치
+        → 못 찾으면 → 힙 늘려서 새 블록 만들기
+    3. 배치된 블록 포인터 반환
+    */
+    if (size == 0){
         return NULL;
-    else
-    {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
     }
+
+    void *bp = find_fit(size);
+
+    if(bp == NULL){
+        bp = extend_heap(size);
+    }
+
+    if(bp == NULL){
+        return NULL;
+    }
+
+    place(bp, size);
+    return bp;
 }
 
 /*
@@ -121,4 +135,44 @@ void *mm_realloc(void *ptr, size_t size)
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
     return newptr;
+}
+
+// 1. 빈 블록 탐색
+static void *find_fit(size_t size) 
+{ 
+    for (char *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+    // 빈 블록 찾기
+     if (!GET_ALLOC(bp) && GET_SIZE(HDRP(bp)) > size){
+        return bp;
+     }   
+    }
+
+    return NULL;
+
+}
+
+// 2. 블록 배치 (header/footer 업데이트)
+static void place(void *bp, size_t size) 
+{
+    PUT(HDRP(bp), PACK(size, 1));
+    PUT(FTRP(bp), PACK(size, 1));
+
+}
+
+// 3. 힙 확장
+static void *extend_heap(size_t size)
+{   
+    size_t new_size = ALIGN(size) + 8;
+    char *raw = (char *)mem_sbrk(new_size);
+
+    if (raw == (void *)-1)
+        return NULL;
+
+    char *bp = raw + 4;
+    PUT(HDRP(bp), PACK(new_size, 0));
+    PUT(FTRP(bp), PACK(new_size, 0));
+    PUT((char *)(FTRP(bp)) + 4, PACK(0, 1)); // 크기 0, allocated
+
+    return bp;
+
 }

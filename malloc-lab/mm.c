@@ -46,13 +46,9 @@ team_t team = {
 #define GET_SIZE(p) (*(size_t *) (p) & ~0x7) /* 사이즈만 추출 (하위 3비트 소거) - not 0x7과 AND 연산 */
 #define GET_ALLOC(p) (*(size_t *)(p) & 0x1) /* 점유 여부만 추출 (최하위 1비트 추출) - 0x1과 AND 연산 */
 #define HDRP(ptr) ((char *)(ptr) - 4) /* 헤더 찾기 (힙 탐색) | Header (4byte) | payload | */
-
 #define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr))) /* ptr에서 다음 블록 payload 포인터 */
-#define PREV_BLKP(ptr)  /* 이전 블록 payload 포인터 */
-
 #define FTRP(ptr) ((char *) NEXT_BLKP(ptr) - 8) /* 현재 블록 footer 주소 */
 #define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 */
-
 #define PUT(p, val) (*(size_t *)(p) = (val)) /* p 주소에 값을 쓰기 */
 
 

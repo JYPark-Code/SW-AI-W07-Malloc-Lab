@@ -257,31 +257,27 @@ static void *extend_heap(size_t size)
 }
 
 // 4. free - 4가지 경우 - coalesce 하기
-static void *coalesce(void *ptr)
+// 실제 블록 병합 로직 (implicit/explicit 공통)
+static void *_coalesce_blocks(void *ptr)
 {
-#ifdef EXPLICIT
-    // explicit coalesce (TODO)
-
-#else
-    // implicit coalesce (현재 코드)
+    // 1. 양쪽이 다 점유되어있는 경우
     if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr))))
         return ptr;
-    // ... 나머지 현재 코드
+
     size_t curr_size = GET_SIZE(HDRP(ptr));
     size_t prev_size = GET_SIZE(HDRP(PREV_BLKP(ptr)));
     size_t next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr)));
 
     // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
-    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr))))
-    {
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr)))) {
         size_t merge_size = curr_size + prev_size;
         PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
         PUT(FTRP(ptr), PACK(merge_size, 0));
         return PREV_BLKP(ptr);
     }
+
     // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
-    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr))))
-    {
+    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr)))) {
         size_t merge_size = curr_size + next_size;
         PUT(HDRP(ptr), PACK(merge_size, 0));
         PUT(FTRP(ptr), PACK(merge_size, 0));
@@ -293,5 +289,14 @@ static void *coalesce(void *ptr)
     PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
     PUT(FTRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
     return PREV_BLKP(ptr);
+}
+
+// 5. coalesce 함수 분리
+static void *coalesce(void *ptr)
+{
+#ifdef EXPLICIT
+    // explicit coalesce (TODO) - free list 관리 + _coalesce_blocks 호출
+#else
+    return _coalesce_blocks(ptr);
 #endif
 }

@@ -223,6 +223,30 @@ static void place(void *bp, size_t size)
 {
 #ifdef EXPLICIT
     // explicit place (TODO)
+    /*
+    1. remove_free(bp) — free list에서 제거
+    2. 헤더/푸터 allocated로 표시
+    3. split 조건 확인 (old_size - size >= 24)
+    4. split이면 나머지 블록을 insert_free로 free list에 추가
+    */
+    remove_free(bp);
+    size_t old_size = GET_SIZE(HDRP(bp));
+    if(old_size - size >= 24){
+        PUT(HDRP(bp), PACK(size ,1));
+        PUT(FTRP(bp), PACK(size ,1));
+        PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+
+        insert_free(NEXT_BLKP(bp)); // 나머지 블록
+
+    } else {
+        PUT(HDRP(bp), PACK(old_size, 1));
+        PUT(FTRP(bp), PACK(old_size, 1));
+    }
+
+
+
+
 #else
     // implicit place (현재 코드)
     size_t old_size = GET_SIZE(HDRP(bp));

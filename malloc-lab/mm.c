@@ -297,6 +297,66 @@ static void *coalesce(void *ptr)
 {
 #ifdef EXPLICIT
     // explicit coalesce (TODO) - free list 관리 + _coalesce_blocks 호출
+    /* 여기도 케이스 4가지로 병합 */
+
+    /* 케이스 1 (양쪽 allocated):
+    1. insert_free(ptr)
+    2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환 
+    */
+    
+    unsigned int prev_get_alloc = GET_ALLOC(HDRP(PREV_BLKP(ptr)));
+    unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
+
+    if (prev_get_alloc && next_get_alloc)
+    {
+        insert_free(ptr);
+        return _coalesce_blocks(ptr);
+    }
+    
+    /* 케이스 2 (이전만 free):
+    1. remove_free(PREV_BLKP(ptr))
+    2. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    3. insert_free(결과)
+    */
+    if (next_get_alloc)
+    {
+        remove_free(PREV_BLKP(ptr));
+        void *result = _coalesce_blocks(ptr);
+        insert_free(result);
+        return result;
+    }
+
+    /*
+    케이스 3 (다음만 free):
+    1. remove_free(NEXT_BLKP(ptr))
+    2. _coalesce_blocks(ptr) → ptr 반환
+    3. insert_free(결과)
+    */
+   if (prev_get_alloc)
+   {
+    remove_free(NEXT_BLKP(ptr));
+    void *result = _coalesce_blocks(ptr);
+    insert_free(result);
+    return result;
+   }
+
+    /*
+    케이스 4 (양쪽 free):
+    1. remove_free(PREV_BLKP(ptr))
+    2. remove_free(NEXT_BLKP(ptr))
+    3. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    4. insert_free(결과)
+    */
+   else{
+    remove_free(PREV_BLKP(ptr));
+    remove_free(NEXT_BLKP(ptr));
+    void *result = _coalesce_blocks(ptr);
+    insert_free(result);
+    return result;
+   }
+
+
+
 #else
     return _coalesce_blocks(ptr);
 #endif

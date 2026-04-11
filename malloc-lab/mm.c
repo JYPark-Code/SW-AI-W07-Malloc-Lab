@@ -337,5 +337,44 @@ static void insert_free(void *bp)
 /* free list에서 제거 */
 static void remove_free(void *bp)
 {
+    /* coalesce와 똑같이 4가지 경우.
+    1. prev 있고 next 있음 → 중간 제거
+    2. prev 없고 next 있음 → 맨 앞 제거
+    3. prev 있고 next 없음 → 맨 뒤 제거
+    4. prev 없고 next 없음 → 유일한 블록 제거
+    */
+
+    // 1. prev 있고 next 있음 → 중간 제거
+    if (PREV_FREE(bp) && NEXT_FREE(bp))
+    {
+        char *A = PREV_FREE(bp);
+        char *B = NEXT_FREE(bp);
+
+        SET_NEXT_FREE(A, B);
+        SET_PREV_FREE(B, A);
+    }
+
+    // 2. prev 없고 next 있음 → 맨 앞 제거
+    if (!PREV_FREE(bp) && NEXT_FREE(bp))
+    {
+        char *B = NEXT_FREE(bp);
+        SET_PREV_FREE(B, NULL);
+        free_listp = B;
+    }
+
+    // 3. prev 있고 next 없음 → 맨 뒤 제거
+    if (PREV_FREE(bp) && !NEXT_FREE(bp))
+    {
+        char *A = PREV_FREE(bp);
+        SET_NEXT_FREE(A, NULL);
+    }
+
+    // 4. prev 없고 next 없음 → 유일한 블록 제거
+    if (!PREV_FREE(bp) && !NEXT_FREE(bp))
+    {
+        free_listp = NULL;
+    }
+
+
 
 }

@@ -81,6 +81,8 @@ static void place(void *bp, size_t size);
 static void *extend_heap(size_t size);
 static void *coalesce(void *ptr);
 static void *_coalesce_blocks(void *ptr);
+static void insert_free(void *bp);
+static void remove_free(void *bp);
 
 /*
  * mm_init - initialize the malloc package.
@@ -190,6 +192,12 @@ static void *find_fit(size_t size)
     // explicit next fit (TODO)
 #else
     // explicit first fit (TODO)
+    for (char *bp = free_listp; bp != NULL; bp = NEXT_FREE(bp))
+    {
+        if (GET_SIZE(HDRP(bp)) >= size)
+            return bp;
+    }
+
 #endif
     return NULL;
 

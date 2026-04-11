@@ -80,6 +80,7 @@ static void *find_fit(size_t size);
 static void place(void *bp, size_t size);
 static void *extend_heap(size_t size);
 static void *coalesce(void *ptr);
+static void *_coalesce_blocks(void *ptr);
 
 /*
  * mm_init - initialize the malloc package.
@@ -299,4 +300,42 @@ static void *coalesce(void *ptr)
 #else
     return _coalesce_blocks(ptr);
 #endif
+}
+
+// 6. explicit coalesce를 위해 함수 분리
+/* free list에 삽입 */
+static void insert_free(void *bp)
+{
+    char *curr = free_listp;
+    char *prev = NULL;
+
+    // 현재 블록 주소 < 삽입할 블록의 주소를 판별한다.
+    while (curr != NULL && curr < (char *)bp) 
+    {
+        prev = curr;
+        curr = NEXT_FREE(curr);
+    }
+    // 루프 끝나면:
+    // prev = bp 앞에 올 블록 (없으면 NULL)
+    if (prev) {
+        SET_NEXT_FREE(prev, bp);   // A.next = bp
+        SET_PREV_FREE(bp, prev);   // bp.prev = A
+    } else {
+        SET_PREV_FREE(bp, NULL);   // bp.prev = NULL
+        free_listp = bp;           // 리스트 시작점 = bp
+    }
+
+    if (curr) {
+        SET_NEXT_FREE(bp, curr);   // bp.next = B
+        SET_PREV_FREE(curr, bp);   // B.prev = bp
+    } else {
+        SET_NEXT_FREE(bp, NULL);   // bp.next = NULL
+    }
+
+} 
+
+/* free list에서 제거 */
+static void remove_free(void *bp)
+{
+
 }

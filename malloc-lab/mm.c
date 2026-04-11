@@ -53,6 +53,15 @@ team_t team = {
 #define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 */
 #define PUT(p, val) (*(unsigned int *)(p) = (val)) /* p 주소에 값을 쓰기 */
 
+/* 방법 선택 - 하나만 주석 해제 */
+// #define EXPLICIT
+// #define SEGLIST
+/* 없으면 implicit (현재) */
+
+/* fit 전략 선택 */
+// #define BEST_FIT
+// #define NEXT_FIT
+/* 없으면 first fit (현재) */
 
 static char *heap_listp;  // 전역변수
 
@@ -154,35 +163,52 @@ void *mm_realloc(void *ptr, size_t size)
 }
 
 // 1. 빈 블록 탐색
-static void *find_fit(size_t size) 
-{ 
-    for (char *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-    // 빈 블록 찾기
-     if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= size){
-        return bp;
-     }   
-    }
-
+static void *find_fit(size_t size)
+{
+#ifdef EXPLICIT
+    #ifdef BEST_FIT
+        // explicit best fit (TODO)
+    #elif defined(NEXT_FIT)
+        // explicit next fit (TODO)
+    #else
+        // explicit first fit (TODO)
+    #endif
     return NULL;
-
+#else
+    #ifdef BEST_FIT
+        // implicit best fit (TODO)
+    #elif defined(NEXT_FIT)
+        // implicit next fit (TODO)
+    #else
+        // implicit first fit (현재 코드)
+        for (char *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+            if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= size)
+                return bp;
+        }
+        return NULL;
+    #endif
+#endif
 }
 
-// 2. 블록 배치 (header/footer 업데이트)
-static void place(void *bp, size_t size) 
-{   
-    // split 함수 구현
-    size_t old_size = GET_SIZE(HDRP(bp));
 
-    if (GET_SIZE(HDRP(bp)) - size >= 16){
+// 2. 블록 배치 (header/footer 업데이트)
+static void place(void *bp, size_t size)
+{
+#ifdef EXPLICIT
+    // explicit place (TODO)
+#else
+    // implicit place (현재 코드)
+    size_t old_size = GET_SIZE(HDRP(bp));
+    if (old_size - size >= 16) {
         PUT(HDRP(bp), PACK(size, 1));
         PUT(FTRP(bp), PACK(size, 1));
         PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
     } else {
-        PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
-        PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 1));
+        PUT(HDRP(bp), PACK(old_size, 1));
+        PUT(FTRP(bp), PACK(old_size, 1));
     }
-
+#endif
 }
 
 // 3. 힙 확장
@@ -208,35 +234,38 @@ static void *extend_heap(size_t size)
 // 4. free - 4가지 경우 - coalesce 하기
 static void *coalesce(void *ptr)
 {
+    #ifdef EXPLICIT
+    // explicit coalesce (TODO)
 
-    // 1. 양쪽이 다 점유되어있는 경우 
-    if(GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
-        return ptr;
-    }
+    #else
+        // implicit coalesce (현재 코드)
+        if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr))))
+            return ptr;
+        // ... 나머지 현재 코드
+        size_t curr_size = GET_SIZE(HDRP(ptr));
+        size_t prev_size = GET_SIZE(HDRP(PREV_BLKP(ptr)));
+        size_t next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr)));
 
-    size_t curr_size = GET_SIZE(HDRP(ptr));
-    size_t prev_size = GET_SIZE(HDRP(PREV_BLKP(ptr)));
-    size_t next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr)));
 
+        // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
+        if(GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
+            size_t merge_size = curr_size + prev_size;
+            PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
+            PUT(FTRP(ptr), PACK(merge_size, 0));
+            return PREV_BLKP(ptr);
+        }
+        // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
+        if(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
+            size_t merge_size = curr_size + next_size;
+            PUT(HDRP(ptr), PACK(merge_size, 0));
+            PUT(FTRP(ptr), PACK(merge_size, 0));
+            return ptr;
+        }
 
-    // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
-    if(GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
-        size_t merge_size = curr_size + prev_size;
+        // 4. 양쪽 다 free인 경우.
+        size_t merge_size = curr_size + prev_size + next_size;
         PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
-        PUT(FTRP(ptr), PACK(merge_size, 0));
+        PUT(FTRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
         return PREV_BLKP(ptr);
-    }
-    // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
-    if(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr)))){
-        size_t merge_size = curr_size + next_size;
-        PUT(HDRP(ptr), PACK(merge_size, 0));
-        PUT(FTRP(ptr), PACK(merge_size, 0));
-        return ptr;
-    }
-
-    // 4. 양쪽 다 free인 경우.
-    size_t merge_size = curr_size + prev_size + next_size;
-    PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
-    PUT(FTRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
-    return PREV_BLKP(ptr);
+    #endif
 }

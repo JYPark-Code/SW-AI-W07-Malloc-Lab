@@ -53,6 +53,12 @@ team_t team = {
 #define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 */
 #define PUT(p, val) (*(unsigned int *)(p) = (val)) /* p 주소에 값을 쓰기 */
 
+/* explicit 위한 매크로 */
+#define PREV_FREE(p) (*(char **)(p)) /* free의 prev* 값 : p에서 char* 포인터 읽기 **/
+#define NEXT_FREE(p) (*(char **)((char *)(p) + 8)) /* free의 next* 값 : p+8에서 char* 포인터 읽기 */
+#define SET_PREV_FREE(p, val) (*(char **)(p) = (val)) /* free의 prev값 SET */
+#define SET_NEXT_FREE(p, val) (*(char **)((char *)(p) + 8) = (val))/* free의 next값 SET */
+
 /* 방법 선택 - 하나만 주석 해제 */
 // #define EXPLICIT
 // #define SEGLIST

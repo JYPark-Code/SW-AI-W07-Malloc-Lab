@@ -503,7 +503,7 @@ static int _get_bucket_index(size_t size) {
             size = (size >> 1);
             index += 1;
         }
-        
+
         if (index > 8) 
         {
             return 8;
@@ -511,6 +511,20 @@ static int _get_bucket_index(size_t size) {
 
         return index;
     }
+}
 
-
+/* 8. 인덱스를 받아서로 포인터를 반환하는 함수*/
+static char **_get_bucket(int index) {
+    switch(index) {
+        case 0: return &seg_list_0;
+        case 1: return &seg_list_1;
+        case 2: return &seg_list_2;
+        case 3: return &seg_list_3;
+        case 4: return &seg_list_4;
+        case 5: return &seg_list_5;
+        case 6: return &seg_list_6;
+        case 7: return &seg_list_7;
+        case 8: return &seg_list_8;
+        default: return &seg_list_8;
+    }
 }

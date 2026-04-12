@@ -1,141 +1,98 @@
-# 📘 Docker + VSCode DevContainer 기반 C 개발 환경 구축 가이드 (MallocLab)
+# SW 정글 Week 7 - Malloc Lab
 
-이 문서는 **Windows**와 **macOS** 사용자가 Docker와 VSCode DevContainer 기능을 활용하여 C 개발 및 디버깅 환경을 빠르게 구축할 수 있도록 도와줍니다.
-
-[**주의**] 기존 차수와 다른 점만 확인하시면 4장부터 6장만 확인하시면 됩니다.
-
----
-
-## 1. Docker란 무엇인가요?
-
-**Docker**는 애플리케이션을 어떤 컴퓨터에서든 **동일한 환경에서 실행**할 수 있게 도와주는 **가상화 플랫폼**입니다.  
-
-Docker는 다음 구성요소로 이루어져 있습니다:
-
-- **Docker Engine**: 컨테이너를 실행하는 핵심 서비스
-- **Docker Image**: 컨테이너 생성에 사용되는 템플릿 (레시피 📃)
-- **Docker Container**: 이미지를 기반으로 생성된 실제 실행 환경 (요리 🍜)
-
-### ✅ AWS EC2와의 차이점
-
-| 구분 | EC2 같은 VM | Docker 컨테이너 |
-|------|-------------|-----------------|
-| 실행 단위 | OS 포함 전체 | 애플리케이션 단위 |
-| 실행 속도 | 느림 (수십 초 이상) | 매우 빠름 (거의 즉시) |
-| 리소스 사용 | 무거움 | 가벼움 |
+CS:APP Malloc Lab 구현 프로젝트입니다.  
+C로 직접 `malloc`, `free`, `realloc`을 구현하며 동적 메모리 할당기의 원리를 학습합니다.
 
 ---
 
-## 2. VSCode DevContainer란 무엇인가요?
+## 구현 방법 선택
 
-**DevContainer**는 VSCode에서 Docker 컨테이너를 **개발 환경**처럼 사용할 수 있게 해주는 기능입니다.
+`mm.c` 상단의 매크로 주석을 해제해 방법을 선택합니다:
 
-- 코드를 실행하거나 디버깅할 때 **컨테이너 내부 환경에서 동작**
-- 팀원 간 **환경 차이 없이 동일한 개발 환경 구성** 가능
-- `.devcontainer` 폴더에 정의된 설정을 VSCode가 읽어 자동 구성
+```c
+// #define EXPLICIT   // Explicit Free List
+// #define SEGLIST    // Segregated Free List
+// 둘 다 주석이면 Implicit Free List
 
----
-
-## 3. Docker Desktop 설치하기
-
-1. Docker 공식 사이트에서 설치 파일 다운로드:  
-   👉 [https://www.docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop)
-
-2. 설치 후 Docker Desktop 실행  
-   - Windows: Docker 아이콘이 트레이에 떠야 함  
-   - macOS: 상단 메뉴바에 Docker 아이콘 확인
+// #define BEST_FIT   // Best Fit
+// #define NEXT_FIT   // Next Fit
+// 둘 다 주석이면 First Fit
+```
 
 ---
 
-## 4. 프로젝트 파일 다운로드 (히스토리 없이)
+## 구현 진행 상황
 
-터미널(CMD, PowerShell, zsh 등)에서 아래 명령어로 프로젝트 폴더만 내려받습니다:
+### Implicit Free List
+- [x] 기본 블록 구조 (header / payload / footer)
+- [x] 경계 태그 (boundary tag) - PACK, GET_SIZE, GET_ALLOC
+- [x] mm_init - prologue / epilogue 힙 초기화
+- [x] mm_malloc - first fit 탐색 + extend_heap
+- [x] mm_free - alloc 비트 해제
+- [x] coalesce - 인접 free 블록 4가지 케이스 병합
+- [x] place - split 구현 (최소 블록 16바이트)
+
+### Explicit Free List (Doubly Linked List)
+- [x] free 블록 내 prev/next 포인터 저장 (payload 공간 재활용)
+- [x] PREV_FREE / NEXT_FREE / SET_PREV_FREE / SET_NEXT_FREE 매크로
+- [x] insert_free - address-ordered 방식 삽입
+- [x] remove_free - 4가지 케이스 제거
+- [x] coalesce - free list 관리 + 블록 병합
+- [x] find_fit - free_listp 순회
+- [x] place - remove_free + split + insert_free (최소 블록 24바이트)
+
+### Segregated Free List
+- [ ] 버킷 설계 (2의 거듭제곱 기준 9개 버킷)
+- [ ] insert_free - 버킷 탐색 + 삽입
+- [ ] remove_free - 버킷에서 제거
+- [ ] find_fit - best fit 탐색
+- [ ] place - split + 나머지 블록 적절한 버킷에 삽입
+
+### 추가 최적화
+- [ ] Best Fit
+- [ ] Footer 제거 (allocated 블록)
+
+---
+
+## 빌드 및 테스트
 
 ```bash
-git clone --depth=1 https://github.com/krafton-jungle/malloc_lab_docker.git
-```
+make clean && make
 
-- `--depth=1` 옵션은 git commit 히스토리를 생략하고 **최신 파일만 가져옵니다.**
+# 전체 trace 테스트
+./mdriver -V
 
-### 📂 다운로드 후 폴더 구조 설명
-
-```
-malloc_lab_docker/
-├── .devcontainer/
-│   ├── devcontainer.json      # VSCode에서 컨테이너 환경 설정
-│   └── Dockerfile             # C 개발 환경 이미지 정의
-│
-├── .vscode/
-│   ├── launch.json            # 디버깅 설정 (F5 실행용)
-│   └── tasks.json             # 컴파일 자동화 설정
-│
-├── malloc-lab
-│   ├── short1-bal.rep          # 테스트 케이스
-│   ├── Makefile                # 과제를 컴파일하고 테스트하기 위한 파일
-│   └── README.md               # malloc-lab 과제 설명
-│
-└── README.md  # 설치 및 사용법 설명 문서
+# 단일 trace 테스트
+./mdriver -V -f short1-bal.rep
+./mdriver -V -f short2-bal.rep
 ```
 
 ---
 
-## 5. VSCode에서 해당 프로젝트 폴더 열기
+## 현재 점수
 
-1. VSCode를 실행
-2. `파일 → 폴더 열기`로 방금 클론한 `malloc_lab_docker` 폴더를 선택
-
----
-
-## 6. 개발 컨테이너: 컨테이너에서 열기
-
-1. VSCode에서 `Ctrl+Shift+P` (Windows/Linux) 또는 `Cmd+Shift+P` (macOS)를 누릅니다.
-2. 명령어 팔레트에서 `Dev Containers: Reopen in Container`를 선택합니다.
-3. 이후 컨테이너가 자동으로 실행되고 빌드됩니다. 처음 컨테이너를 열면 빌드하는 시간이 오래걸릴 수 있습니다. 빌드 후, 프로젝트가 **컨테이너 안에서 실행됨**.
+| 방법 | Util | Throughput | 총점 |
+|------|------|-----------|------|
+| Implicit + First Fit | 75% | 22/40 | 67/100 |
+| Explicit + First Fit | 74% | 40/40 | 84/100 |
 
 ---
 
-## 7. C 파일에 브레이크포인트 설정 후 디버깅 (F5)
+## 핵심 개념 정리
 
-이제 본격적으로 문제를 풀 시간입니다. `malloc-lab/README.md` 파일을 참조하셔서 rbtree 문제를 풀어보세요.
-
-C 언어로 문제를 풀다가 디버깅이 필요하시면 소스코드에 BreakPoint를 설정한 뒤에 키보드에서 `F5`를 눌러 디버깅을 시작할 수 있습니다.`F5`를 누르면 `malloc-lab`폴더에서 `mdriver -V -f short1-bal.rep` 를 실행하여 테스트 코드를 디버깅 모드로 실행합니다.
-- 참고로 변수, 메모리, 스택, 출력 등을 VSCode에서 확인할 수도 있습니다.
-
----
-
-## 8. 새로운 Git 리포지토리에 Commit & Push 하기
-
-금주 프로젝트를 개인 Git 리포와 같은 다른 리포지토리에 업로드하려면, 기존 Git 연결을 제거하고 새롭게 초기화해야 합니다.
-
-### ✅ 완전히 새로운 Git 리포로 업로드하는 방법
-
-아래 명령어를 순서대로 실행하세요:
-
-```bash
-rm -rf .git
-git init
-git remote add origin https://github.com/myusername/my-new-repo.git
-git add .
-git commit -m "Clean start"
-git push -u origin main
+### 블록 구조
+```
+Allocated:  [header 4][payload ...][footer 4]
+Free:       [header 4][prev* 8][next* 8][...][footer 4]
 ```
 
-### 📌 설명
+### 헤더/푸터 인코딩
+```
+31                3  2  1  0
+[   size (29bit)  |  0  0  a]
+                           ↑ allocated bit
+```
 
-- `rm -rf .git`: 기존 Git 기록과 연결을 완전히 삭제합니다.
-- `git init`: 현재 폴더를 새로운 Git 리포지토리로 초기화합니다.
-- `git remote add origin ...`: 새로운 리포지토리 주소를 origin으로 등록합니다.
-- `git add .` 및 `git commit`: 모든 파일을 커밋합니다.
-- `git push`: 새로운 리포에 최초 업로드(Push)합니다.
-
-이 과정을 거치면 기존 리포와의 연결은 완전히 제거되고, **새로운 독립적인 프로젝트로 관리**할 수 있습니다.
-
-## 🎉 끝
-
-이제 Docker와 DevContainer를 활용한 C 개발 환경이 완성되었습니다.
-
-- (주의) 위 내용은 처음 설치하는 사람을 기준으로 작성된 내용입니다. malloc-lab 폴더에서 있는 프로젝트를 반복적으로 개발할 경우 5에서 7장의 내용만 반복하시면 됩니다.
-- 어떤 운영체제에서든 동일한 환경으로 개발 가능  
-- VSCode 내에서 코드 작성, 컴파일, 디버깅까지 한 번에 가능
-
----
+### Boundary Tag
+- header와 footer에 동일한 값(size | alloc) 저장
+- 이전 블록 크기를 O(1)로 역추적 가능 → coalesce 효율화

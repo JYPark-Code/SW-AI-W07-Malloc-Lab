@@ -191,15 +191,49 @@ void mm_free(void *ptr)
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
  */
 void *mm_realloc(void *ptr, size_t size)
-{
+{   
+    // 케이스 1: size == 0
+    if (size == 0){
+        mm_free(ptr);
+        return NULL;
+    }
+    // 케이스 2: ptr == NULL
+    if (ptr == NULL)
+    {
+        return mm_malloc(size);
+    } 
+    
+    // 그냥 size는 payload의 크기이기에, 전체 블럭의 크기 기준으로 비교 필요
+    size_t asize = ALIGN(size + 8); 
+
+    // 케이스 3: 새 크기 <= 현재 블록 크기
+    if (asize <= GET_SIZE(HDRP(ptr))) 
+    {
+        return ptr;
+    }
+    // 케이스 4: 다음 블록 free이고 합치면 충분
+    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
+    {
+        char *next_bp = NEXT_BLKP(ptr);
+        size_t next_size = GET_SIZE(HDRP(next_bp));
+        size_t merged_size = GET_SIZE(HDRP(ptr)) + next_size;
+
+        remove_free(next_bp, _get_bucket(_get_bucket_index(next_size)));
+        PUT(HDRP(ptr), PACK(merged_size, 1));
+        PUT(FTRP(ptr), PACK(merged_size, 1));
+        return ptr;
+    }
+
+    // 케이스 5 (else): 기존 naive 코드
     void *oldptr = ptr;
     void *newptr;
     size_t copySize;
 
     newptr = mm_malloc(size);
+    copySize = GET_SIZE(HDRP(oldptr));
     if (newptr == NULL)
         return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+
     if (size < copySize)
         copySize = size;
     memcpy(newptr, oldptr, copySize);

@@ -203,6 +203,21 @@ static void *find_fit(size_t size)
     // seglist best fit (TODO)
 #else
     // seglist first fit (TODO)
+    
+
+    for(int i = _get_bucket_index(size); i <= 8; i++)
+    {   
+        for(char *bp = *_get_bucket(i); bp != NULL; bp = NEXT_FREE(bp)){
+            if (GET_SIZE(HDRP(bp)) >= size)
+            {
+                return bp;
+            }
+                
+        }
+
+    }
+
+
 #endif
     return NULL;
 #elif defined(EXPLICIT)
@@ -214,7 +229,9 @@ static void *find_fit(size_t size)
     for (char *bp = free_listp; bp != NULL; bp = NEXT_FREE(bp))
     {
         if (GET_SIZE(HDRP(bp)) >= size)
+        {
             return bp;
+        }
     }
 
 #endif

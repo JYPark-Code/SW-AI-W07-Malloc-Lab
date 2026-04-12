@@ -487,7 +487,30 @@ static void remove_free(void *bp, char **bucket)
     {
         *bucket = NULL;
     }
+}
 
+/* 7. SegList를 위한 함수*/
+// 버킷 인덱스 반환 (GET)
+static int _get_bucket_index(size_t size) {
+    // size에 따라 0~8 반환
+    int index = 0;
+
+    if (size <= 32){
+        return index;
+    } else {
+        size = size >> 5; 
+        while(size > 0){
+            size = (size >> 1);
+            index += 1;
+        }
+        
+        if (index > 8) 
+        {
+            return 8;
+        }
+
+        return index;
+    }
 
 
 }

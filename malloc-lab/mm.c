@@ -52,7 +52,7 @@ team_t team = {
 #define HDRP(ptr) ((char *)(ptr) - 4)                            /* 헤더 찾기 (힙 탐색) | Header (4byte) | payload | */
 #define NEXT_BLKP(ptr) ((char *)(ptr) + GET_SIZE(HDRP(ptr)))     /* ptr에서 다음 블록 payload 포인터 */
 #define FTRP(ptr) ((char *)NEXT_BLKP(ptr) - 8)                   /* 현재 블록 footer 주소 */
-#define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 */
+// #define PREV_BLKP(ptr) ((char *)(ptr) - GET_SIZE(HDRP(ptr) - 4)) /* 이전 블록 payload 포인터 -> footer 제거 후 함수로 변환 */
 #define PUT(p, val) (*(unsigned int *)(p) = (val))               /* p 주소에 값을 쓰기 */
 
 /* explicit 위한 매크로 */
@@ -102,6 +102,7 @@ static void insert_free(void *bp, char **bucket);
 static void remove_free(void *bp, char **bucket);
 static int _get_bucket_index(size_t size);
 static char **_get_bucket(int index);
+static void *_prev_blkp(void *ptr);
 
 /*
  * mm_init - initialize the malloc package.
@@ -413,24 +414,24 @@ static void *extend_heap(size_t size)
 static void *_coalesce_blocks(void *ptr)
 {
     // 1. 양쪽이 다 점유되어있는 경우
-    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr))))
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
         return ptr;
 
     size_t curr_size = GET_SIZE(HDRP(ptr));
-    size_t prev_size = GET_SIZE(HDRP(PREV_BLKP(ptr)));
+    size_t prev_size = GET_SIZE(HDRP(_prev_blkp(ptr)));
     size_t next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr)));
 
     // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
-    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr))))
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(_prev_blkp(ptr))))
     {
         size_t merge_size = curr_size + prev_size;
-        PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
+        PUT(HDRP(_prev_blkp(ptr)), PACK(merge_size, 0));
         PUT(FTRP(ptr), PACK(merge_size, 0));
-        return PREV_BLKP(ptr);
+        return _prev_blkp(ptr);
     }
 
     // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
-    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr))))
+    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
     {
         size_t merge_size = curr_size + next_size;
         PUT(HDRP(ptr), PACK(merge_size, 0));
@@ -440,9 +441,9 @@ static void *_coalesce_blocks(void *ptr)
 
     // 4. 양쪽 다 free인 경우.
     size_t merge_size = curr_size + prev_size + next_size;
-    PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
-    PUT(FTRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
-    return PREV_BLKP(ptr);
+    PUT(HDRP(_prev_blkp(ptr)), PACK(merge_size, 0));
+    PUT(FTRP(_prev_blkp(ptr)), PACK(merge_size, 0));
+    return _prev_blkp(ptr);
 }
 
 // 5. coalesce 함수 분리
@@ -451,7 +452,7 @@ static void *coalesce(void *ptr)
 #ifdef SEGLIST
     // seglist coalesce
     // 병합 전 각 블록의 버킷
-    char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(PREV_BLKP(ptr)))));
+    char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(_prev_blkp(ptr)))));
     char **curr_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(ptr))));
     char **next_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(NEXT_BLKP(ptr)))));
 
@@ -460,7 +461,7 @@ static void *coalesce(void *ptr)
     2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환
     */
 
-    unsigned int prev_get_alloc = GET_ALLOC(HDRP(PREV_BLKP(ptr)));
+    unsigned int prev_get_alloc = GET_ALLOC(HDRP(_prev_blkp(ptr)));
     unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
 
     if (prev_get_alloc && next_get_alloc)
@@ -470,13 +471,13 @@ static void *coalesce(void *ptr)
     }
 
     /* 케이스 2 (이전만 free):
-    1. remove_free(PREV_BLKP(ptr))
-    2. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    1. remove_free(_prev_blkp(ptr))
+    2. _coalesce_blocks(ptr) → _prev_blkp(ptr) 반환
     3. insert_free(결과)
     */
     if (next_get_alloc)
     {
-        remove_free(PREV_BLKP(ptr), prev_bucket);
+        remove_free(_prev_blkp(ptr), prev_bucket);
         void *result = _coalesce_blocks(ptr);
         char **result_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(result))));
         insert_free(result, result_bucket);
@@ -500,14 +501,14 @@ static void *coalesce(void *ptr)
 
     /*
     케이스 4 (양쪽 free):
-    1. remove_free(PREV_BLKP(ptr))
+    1. remove_free(_prev_blkp(ptr))
     2. remove_free(NEXT_BLKP(ptr))
-    3. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    3. _coalesce_blocks(ptr) → _prev_blkp(ptr) 반환
     4. insert_free(결과)
     */
     else
     {
-        remove_free(PREV_BLKP(ptr), prev_bucket);
+        remove_free(_prev_blkp(ptr), prev_bucket);
         remove_free(NEXT_BLKP(ptr), next_bucket);
         void *result = _coalesce_blocks(ptr);
         char **result_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(result))));
@@ -524,7 +525,7 @@ static void *coalesce(void *ptr)
     2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환
     */
 
-    unsigned int prev_get_alloc = GET_ALLOC(HDRP(PREV_BLKP(ptr)));
+    unsigned int prev_get_alloc = GET_ALLOC(HDRP(_prev_blkp(ptr)));
     unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
 
     if (prev_get_alloc && next_get_alloc)
@@ -534,13 +535,13 @@ static void *coalesce(void *ptr)
     }
 
     /* 케이스 2 (이전만 free):
-    1. remove_free(PREV_BLKP(ptr))
-    2. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    1. remove_free(_prev_blkp(ptr))
+    2. _coalesce_blocks(ptr) → _prev_blkp(ptr) 반환
     3. insert_free(결과)
     */
     if (next_get_alloc)
     {
-        remove_free(PREV_BLKP(ptr), &free_listp);
+        remove_free(_prev_blkp(ptr), &free_listp);
         void *result = _coalesce_blocks(ptr);
         insert_free(result, &free_listp);
         return result;
@@ -562,14 +563,14 @@ static void *coalesce(void *ptr)
 
     /*
     케이스 4 (양쪽 free):
-    1. remove_free(PREV_BLKP(ptr))
+    1. remove_free(_prev_blkp(ptr))
     2. remove_free(NEXT_BLKP(ptr))
-    3. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    3. _coalesce_blocks(ptr) → _prev_blkp(ptr) 반환
     4. insert_free(결과)
     */
     else
     {
-        remove_free(PREV_BLKP(ptr), &free_listp);
+        remove_free(_prev_blkp(ptr), &free_listp);
         remove_free(NEXT_BLKP(ptr), &free_listp);
         void *result = _coalesce_blocks(ptr);
         insert_free(result, &free_listp);
@@ -714,5 +715,17 @@ static char **_get_bucket(int index)
         return &seg_list_8;
     default:
         return &seg_list_8;
+    }
+}
+
+/* footer 제거를 위해 만드는 함수 */
+// 9. _prev_blkp : 함수로 리팩토링
+static void *_prev_blkp(void *ptr) {
+    if (GET_PREV_ALLOC(HDRP(ptr))) {
+        // 이전 블록이 allocated → footer 없음 → ??? (coalesce가 필요없으므로 호출이 안됨.)
+        return NULL;
+    } else {
+        // 이전 블록이 free → footer에서 크기 읽기
+        return (char *)(ptr) - GET_SIZE(HDRP(ptr) - 4);
     }
 }

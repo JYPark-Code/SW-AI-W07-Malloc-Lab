@@ -120,6 +120,18 @@ int mm_init(void)
 
     heap_listp += 8; // prologue payload 위치로 이동
 
+#ifdef SEGLIST
+    seg_list_0 = NULL;
+    seg_list_1 = NULL;
+    seg_list_2 = NULL;
+    seg_list_3 = NULL;
+    seg_list_4 = NULL;
+    seg_list_5 = NULL;
+    seg_list_6 = NULL;
+    seg_list_7 = NULL;
+    seg_list_8 = NULL;
+#endif
+
 #ifdef EXPLICIT
     free_listp = NULL; // TODO: 초기화
 #endif

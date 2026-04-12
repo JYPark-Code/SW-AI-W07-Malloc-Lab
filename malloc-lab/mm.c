@@ -92,8 +92,8 @@ static void place(void *bp, size_t size);
 static void *extend_heap(size_t size);
 static void *coalesce(void *ptr);
 static void *_coalesce_blocks(void *ptr);
-static void insert_free(void *bp);
-static void remove_free(void *bp);
+static void insert_free(void *bp, char **bucket);
+static void remove_free(void *bp, char **bucket);
 
 /*
  * mm_init - initialize the malloc package.
@@ -247,7 +247,7 @@ static void place(void *bp, size_t size)
     3. split 조건 확인 (old_size - size >= 24)
     4. split이면 나머지 블록을 insert_free로 free list에 추가
     */
-    remove_free(bp);
+    remove_free(bp, &free_listp);
     size_t old_size = GET_SIZE(HDRP(bp));
     if(old_size - size >= 24){
         PUT(HDRP(bp), PACK(size ,1));
@@ -255,7 +255,7 @@ static void place(void *bp, size_t size)
         PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
 
-        insert_free(NEXT_BLKP(bp)); // 나머지 블록
+        insert_free(NEXT_BLKP(bp), &free_listp); // 나머지 블록
 
     } else {
         PUT(HDRP(bp), PACK(old_size, 1));
@@ -362,7 +362,7 @@ static void *coalesce(void *ptr)
 
     if (prev_get_alloc && next_get_alloc)
     {
-        insert_free(ptr);
+        insert_free(ptr, &free_listp);
         return _coalesce_blocks(ptr);
     }
     
@@ -373,9 +373,9 @@ static void *coalesce(void *ptr)
     */
     if (next_get_alloc)
     {
-        remove_free(PREV_BLKP(ptr));
+        remove_free(PREV_BLKP(ptr), &free_listp);
         void *result = _coalesce_blocks(ptr);
-        insert_free(result);
+        insert_free(result, &free_listp);
         return result;
     }
 
@@ -387,9 +387,9 @@ static void *coalesce(void *ptr)
     */
    if (prev_get_alloc)
    {
-    remove_free(NEXT_BLKP(ptr));
+    remove_free(NEXT_BLKP(ptr), &free_listp);
     void *result = _coalesce_blocks(ptr);
-    insert_free(result);
+    insert_free(result, &free_listp);
     return result;
    }
 
@@ -401,10 +401,10 @@ static void *coalesce(void *ptr)
     4. insert_free(결과)
     */
    else{
-    remove_free(PREV_BLKP(ptr));
-    remove_free(NEXT_BLKP(ptr));
+    remove_free(PREV_BLKP(ptr), &free_listp);
+    remove_free(NEXT_BLKP(ptr), &free_listp);
     void *result = _coalesce_blocks(ptr);
-    insert_free(result);
+    insert_free(result, &free_listp);
     return result;
    }
 
@@ -417,9 +417,9 @@ static void *coalesce(void *ptr)
 
 // 6. explicit coalesce를 위해 함수 분리
 /* free list에 삽입 */
-static void insert_free(void *bp)
+static void insert_free(void *bp, char **bucket)
 {
-    char *curr = free_listp;
+    char *curr = *bucket;
     char *prev = NULL;
 
     // 현재 블록 주소 < 삽입할 블록의 주소를 판별한다.
@@ -435,7 +435,7 @@ static void insert_free(void *bp)
         SET_PREV_FREE(bp, prev);   // bp.prev = A
     } else {
         SET_PREV_FREE(bp, NULL);   // bp.prev = NULL
-        free_listp = bp;           // 리스트 시작점 = bp
+        *bucket = bp;           // 리스트 시작점 = bp
     }
 
     if (curr) {
@@ -448,7 +448,7 @@ static void insert_free(void *bp)
 } 
 
 /* free list에서 제거 */
-static void remove_free(void *bp)
+static void remove_free(void *bp, char **bucket)
 {
     /* coalesce와 똑같이 4가지 경우.
     1. prev 있고 next 있음 → 중간 제거
@@ -472,7 +472,7 @@ static void remove_free(void *bp)
     {
         char *B = NEXT_FREE(bp);
         SET_PREV_FREE(B, NULL);
-        free_listp = B;
+        *bucket = B;
     }
 
     // 3. prev 있고 next 없음 → 맨 뒤 제거
@@ -485,7 +485,7 @@ static void remove_free(void *bp)
     // 4. prev 없고 next 없음 → 유일한 블록 제거
     if (!PREV_FREE(bp) && !NEXT_FREE(bp))
     {
-        free_listp = NULL;
+        *bucket = NULL;
     }
 
 

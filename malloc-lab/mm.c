@@ -61,6 +61,11 @@ team_t team = {
 #define SET_PREV_FREE(p, val) (*(char **)(p) = (val))               /* free의 prev값 SET */
 #define SET_NEXT_FREE(p, val) (*(char **)((char *)(p) + 8) = (val)) /* free의 next값 SET */
 
+/* footer 제거 이후, 적용할 매크로*/
+#define GET_PREV_ALLOC(p) (*(unsigned int *)(p) & 0X2U) /* 이전 블록이 점유됬는지? */
+#define SET_PREV_ALLOC(p) (*(unsigned int *)(p) |= 0X2U)  /* 이전 블록이 점유 됬다고 SET(값 저장) */
+#define CLEAR_PREV_ALLOC(p) (*(unsigned int *)(p) &= ~0X2U) /* 이전 블록을 초기화함 CLEAR(값 저장) */
+
 /* 방법 선택 - 하나만 주석 해제 */
 // #define EXPLICIT
 #define SEGLIST

@@ -11,6 +11,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
@@ -43,6 +44,7 @@ team_t team = {
 
 /* 새로 만든 매크로 */
 #define CHUNKSIZE (1 << 12) // 4096 bytes
+#define MAX(x,y) ((x) > (y) ? (x) : (y))
 
 #define PACK(size, alloc) ((size | alloc))                       /* 메모리 사이즈와 점유 여부 - 하위 3비트는 비고, 최하위에 OR연산으로 점유 여부 표시 */
 #define GET_SIZE(p) (*(unsigned int *)(p) & ~0x7U)               /* 사이즈만 추출 (하위 3비트 소거) - not 0x7과 AND 연산 */
@@ -65,8 +67,7 @@ team_t team = {
 /* 없으면 implicit (현재) */
 
 /* fit 전략 선택 */
-// #define BEST_FIT
-// #define NEXT_FIT
+#define BEST_FIT
 /* 없으면 first fit (현재) */
 
 /* 전역변수 */
@@ -247,20 +248,30 @@ static void *find_fit(size_t size)
 #ifdef SEGLIST
 #ifdef BEST_FIT
     // seglist best fit (TODO)
-#else
-    // seglist first fit (TODO)
-    
+    char *best = NULL;
+    size_t best_diff = SIZE_MAX; // 2^64 - 1 = 18446744073709551615UL
 
-    for(int i = _get_bucket_index(size); i <= 8; i++)
-    {   
+    for(int i = _get_bucket_index(size); i <= 8; i++) {
+        for(char *bp = *_get_bucket(i); bp != NULL; bp = NEXT_FREE(bp)) {
+            if (GET_SIZE(HDRP(bp)) >= size) {
+                size_t diff = GET_SIZE(HDRP(bp)) - size;
+                if (diff < best_diff) {
+                    best = bp;
+                    best_diff = diff;
+                }
+            }
+        }
+    }
+    return best;
+#else
+    // seglist first fit 
+    for(int i = _get_bucket_index(size); i <= 8; i++){   
         for(char *bp = *_get_bucket(i); bp != NULL; bp = NEXT_FREE(bp)){
             if (GET_SIZE(HDRP(bp)) >= size)
             {
                 return bp;
-            }
-                
+            }   
         }
-
     }
 
 
@@ -271,7 +282,7 @@ static void *find_fit(size_t size)
     // explicit best fit (TODO)
 
 #else
-    // explicit first fit (TODO)
+    // explicit first fit
     for (char *bp = free_listp; bp != NULL; bp = NEXT_FREE(bp))
     {
         if (GET_SIZE(HDRP(bp)) >= size)
@@ -303,7 +314,7 @@ static void *find_fit(size_t size)
 static void place(void *bp, size_t size)
 {
 #ifdef SEGLIST
-    // seglist place (TODO)
+    // seglist place
     char **curr_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(bp))));
     remove_free(bp, curr_bucket);
     size_t old_size = GET_SIZE(HDRP(bp));
@@ -325,7 +336,7 @@ static void place(void *bp, size_t size)
 
 
 #elif defined(EXPLICIT)
-    // explicit place (TODO)
+    // explicit place
     /*
     1. remove_free(bp) — free list에서 제거
     2. 헤더/푸터 allocated로 표시
@@ -433,7 +444,7 @@ static void *_coalesce_blocks(void *ptr)
 static void *coalesce(void *ptr)
 {
 #ifdef SEGLIST
-    // seglist coalesce (TODO)
+    // seglist coalesce
     // 병합 전 각 블록의 버킷
     char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(PREV_BLKP(ptr)))));
     char **curr_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(ptr))));
@@ -500,7 +511,7 @@ static void *coalesce(void *ptr)
     }
 
 #elif defined(EXPLICIT)
-    // explicit coalesce (TODO) - free list 관리 + _coalesce_blocks 호출
+    // explicit coalesce  - free list 관리 + _coalesce_blocks 호출
     /* 여기도 케이스 4가지로 병합 */
 
     /* 케이스 1 (양쪽 allocated):

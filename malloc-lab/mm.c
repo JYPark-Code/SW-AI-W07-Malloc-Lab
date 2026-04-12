@@ -258,6 +258,26 @@ static void place(void *bp, size_t size)
 {
 #ifdef SEGLIST
     // seglist place (TODO)
+    char **curr_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(bp))));
+    remove_free(bp, curr_bucket);
+    size_t old_size = GET_SIZE(HDRP(bp));
+    if (old_size - size >= 24)
+    {
+        PUT(HDRP(bp), PACK(size, 1));
+        PUT(FTRP(bp), PACK(size, 1));
+        PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+
+        char **remainder_bucket = _get_bucket(_get_bucket_index(old_size - size));
+        insert_free(NEXT_BLKP(bp), remainder_bucket); // 나머지 블록
+    }
+    else
+    {
+        PUT(HDRP(bp), PACK(old_size, 1));
+        PUT(FTRP(bp), PACK(old_size, 1));
+    }
+
+
 #elif defined(EXPLICIT)
     // explicit place (TODO)
     /*

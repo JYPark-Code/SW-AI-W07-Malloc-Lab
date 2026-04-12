@@ -75,15 +75,15 @@ static char *heap_listp;
 static char *free_listp; // explicit free list 시작점
 #endif
 #ifdef SEGLIST
-static char *seg_list_0;  // 1  ~ 31
-static char *seg_list_1;  // 32 ~ 63
-static char *seg_list_2;  // 64   ~ 127
-static char *seg_list_3;  // 128  ~ 255
-static char *seg_list_4;  // 256  ~ 511
-static char *seg_list_5;  // 512  ~ 1023
-static char *seg_list_6;  // 1024 ~ 2047
-static char *seg_list_7;  // 2048 ~ 4095
-static char *seg_list_8;  // 4096 ~
+static char *seg_list_0; // 1  ~ 31
+static char *seg_list_1; // 32 ~ 63
+static char *seg_list_2; // 64   ~ 127
+static char *seg_list_3; // 128  ~ 255
+static char *seg_list_4; // 256  ~ 511
+static char *seg_list_5; // 512  ~ 1023
+static char *seg_list_6; // 1024 ~ 2047
+static char *seg_list_7; // 2048 ~ 4095
+static char *seg_list_8; // 4096 ~
 #endif
 
 /* forward declaration */
@@ -94,6 +94,8 @@ static void *coalesce(void *ptr);
 static void *_coalesce_blocks(void *ptr);
 static void insert_free(void *bp, char **bucket);
 static void remove_free(void *bp, char **bucket);
+static int _get_bucket_index(size_t size);
+static char **_get_bucket(int index);
 
 /*
  * mm_init - initialize the malloc package.
@@ -249,21 +251,20 @@ static void place(void *bp, size_t size)
     */
     remove_free(bp, &free_listp);
     size_t old_size = GET_SIZE(HDRP(bp));
-    if(old_size - size >= 24){
-        PUT(HDRP(bp), PACK(size ,1));
-        PUT(FTRP(bp), PACK(size ,1));
+    if (old_size - size >= 24)
+    {
+        PUT(HDRP(bp), PACK(size, 1));
+        PUT(FTRP(bp), PACK(size, 1));
         PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
 
         insert_free(NEXT_BLKP(bp), &free_listp); // 나머지 블록
-
-    } else {
+    }
+    else
+    {
         PUT(HDRP(bp), PACK(old_size, 1));
         PUT(FTRP(bp), PACK(old_size, 1));
     }
-
-
-
 
 #else
     // implicit place (현재 코드)
@@ -321,7 +322,8 @@ static void *_coalesce_blocks(void *ptr)
     size_t next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr)));
 
     // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
-    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr)))) {
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(PREV_BLKP(ptr))))
+    {
         size_t merge_size = curr_size + prev_size;
         PUT(HDRP(PREV_BLKP(ptr)), PACK(merge_size, 0));
         PUT(FTRP(ptr), PACK(merge_size, 0));
@@ -329,7 +331,8 @@ static void *_coalesce_blocks(void *ptr)
     }
 
     // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
-    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr)))) {
+    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(PREV_BLKP(ptr))))
+    {
         size_t merge_size = curr_size + next_size;
         PUT(HDRP(ptr), PACK(merge_size, 0));
         PUT(FTRP(ptr), PACK(merge_size, 0));
@@ -348,15 +351,80 @@ static void *coalesce(void *ptr)
 {
 #ifdef SEGLIST
     // seglist coalesce (TODO)
+    // 병합 전 각 블록의 버킷
+    char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(PREV_BLKP(ptr)))));
+    char **curr_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(ptr))));
+    char **next_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(NEXT_BLKP(ptr)))));
+
+    /* 케이스 1 (양쪽 allocated):
+    1. insert_free(ptr)
+    2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환
+    */
+
+    unsigned int prev_get_alloc = GET_ALLOC(HDRP(PREV_BLKP(ptr)));
+    unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
+
+    if (prev_get_alloc && next_get_alloc)
+    {
+        insert_free(ptr, curr_bucket);
+        return _coalesce_blocks(ptr);
+    }
+
+    /* 케이스 2 (이전만 free):
+    1. remove_free(PREV_BLKP(ptr))
+    2. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    3. insert_free(결과)
+    */
+    if (next_get_alloc)
+    {
+        remove_free(PREV_BLKP(ptr), prev_bucket);
+        void *result = _coalesce_blocks(ptr);
+        char **result_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(result))));
+        insert_free(result, result_bucket);
+        return result;
+    }
+
+    /*
+    케이스 3 (다음만 free):
+    1. remove_free(NEXT_BLKP(ptr))
+    2. _coalesce_blocks(ptr) → ptr 반환
+    3. insert_free(결과)
+    */
+    if (prev_get_alloc)
+    {
+        remove_free(NEXT_BLKP(ptr), next_bucket);
+        void *result = _coalesce_blocks(ptr);
+        char **result_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(result))));
+        insert_free(result, result_bucket);
+        return result;
+    }
+
+    /*
+    케이스 4 (양쪽 free):
+    1. remove_free(PREV_BLKP(ptr))
+    2. remove_free(NEXT_BLKP(ptr))
+    3. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
+    4. insert_free(결과)
+    */
+    else
+    {
+        remove_free(PREV_BLKP(ptr), prev_bucket);
+        remove_free(NEXT_BLKP(ptr), next_bucket);
+        void *result = _coalesce_blocks(ptr);
+        char **result_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(result))));
+        insert_free(result, result_bucket);
+        return result;
+    }
+
 #elif defined(EXPLICIT)
     // explicit coalesce (TODO) - free list 관리 + _coalesce_blocks 호출
     /* 여기도 케이스 4가지로 병합 */
 
     /* 케이스 1 (양쪽 allocated):
     1. insert_free(ptr)
-    2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환 
+    2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환
     */
-    
+
     unsigned int prev_get_alloc = GET_ALLOC(HDRP(PREV_BLKP(ptr)));
     unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
 
@@ -365,7 +433,7 @@ static void *coalesce(void *ptr)
         insert_free(ptr, &free_listp);
         return _coalesce_blocks(ptr);
     }
-    
+
     /* 케이스 2 (이전만 free):
     1. remove_free(PREV_BLKP(ptr))
     2. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
@@ -385,13 +453,13 @@ static void *coalesce(void *ptr)
     2. _coalesce_blocks(ptr) → ptr 반환
     3. insert_free(결과)
     */
-   if (prev_get_alloc)
-   {
-    remove_free(NEXT_BLKP(ptr), &free_listp);
-    void *result = _coalesce_blocks(ptr);
-    insert_free(result, &free_listp);
-    return result;
-   }
+    if (prev_get_alloc)
+    {
+        remove_free(NEXT_BLKP(ptr), &free_listp);
+        void *result = _coalesce_blocks(ptr);
+        insert_free(result, &free_listp);
+        return result;
+    }
 
     /*
     케이스 4 (양쪽 free):
@@ -400,15 +468,14 @@ static void *coalesce(void *ptr)
     3. _coalesce_blocks(ptr) → PREV_BLKP(ptr) 반환
     4. insert_free(결과)
     */
-   else{
-    remove_free(PREV_BLKP(ptr), &free_listp);
-    remove_free(NEXT_BLKP(ptr), &free_listp);
-    void *result = _coalesce_blocks(ptr);
-    insert_free(result, &free_listp);
-    return result;
-   }
-
-
+    else
+    {
+        remove_free(PREV_BLKP(ptr), &free_listp);
+        remove_free(NEXT_BLKP(ptr), &free_listp);
+        void *result = _coalesce_blocks(ptr);
+        insert_free(result, &free_listp);
+        return result;
+    }
 
 #else
     return _coalesce_blocks(ptr);
@@ -423,29 +490,34 @@ static void insert_free(void *bp, char **bucket)
     char *prev = NULL;
 
     // 현재 블록 주소 < 삽입할 블록의 주소를 판별한다.
-    while (curr != NULL && curr < (char *)bp) 
+    while (curr != NULL && curr < (char *)bp)
     {
         prev = curr;
         curr = NEXT_FREE(curr);
     }
     // 루프 끝나면:
     // prev = bp 앞에 올 블록 (없으면 NULL)
-    if (prev) {
-        SET_NEXT_FREE(prev, bp);   // A.next = bp
-        SET_PREV_FREE(bp, prev);   // bp.prev = A
-    } else {
-        SET_PREV_FREE(bp, NULL);   // bp.prev = NULL
-        *bucket = bp;           // 리스트 시작점 = bp
+    if (prev)
+    {
+        SET_NEXT_FREE(prev, bp); // A.next = bp
+        SET_PREV_FREE(bp, prev); // bp.prev = A
+    }
+    else
+    {
+        SET_PREV_FREE(bp, NULL); // bp.prev = NULL
+        *bucket = bp;            // 리스트 시작점 = bp
     }
 
-    if (curr) {
-        SET_NEXT_FREE(bp, curr);   // bp.next = B
-        SET_PREV_FREE(curr, bp);   // B.prev = bp
-    } else {
-        SET_NEXT_FREE(bp, NULL);   // bp.next = NULL
+    if (curr)
+    {
+        SET_NEXT_FREE(bp, curr); // bp.next = B
+        SET_PREV_FREE(curr, bp); // B.prev = bp
     }
-
-} 
+    else
+    {
+        SET_NEXT_FREE(bp, NULL); // bp.next = NULL
+    }
+}
 
 /* free list에서 제거 */
 static void remove_free(void *bp, char **bucket)
@@ -491,20 +563,25 @@ static void remove_free(void *bp, char **bucket)
 
 /* 7. SegList를 위한 함수*/
 // 버킷 인덱스 반환 (GET)
-static int _get_bucket_index(size_t size) {
+static int _get_bucket_index(size_t size)
+{
     // size에 따라 0~8 반환
     int index = 0;
 
-    if (size <= 32){
+    if (size <= 32)
+    {
         return index;
-    } else {
-        size = size >> 5; 
-        while(size > 0){
+    }
+    else
+    {
+        size = size >> 5;
+        while (size > 0)
+        {
             size = (size >> 1);
             index += 1;
         }
 
-        if (index > 8) 
+        if (index > 8)
         {
             return 8;
         }
@@ -514,17 +591,29 @@ static int _get_bucket_index(size_t size) {
 }
 
 /* 8. 인덱스를 받아서로 포인터를 반환하는 함수*/
-static char **_get_bucket(int index) {
-    switch(index) {
-        case 0: return &seg_list_0;
-        case 1: return &seg_list_1;
-        case 2: return &seg_list_2;
-        case 3: return &seg_list_3;
-        case 4: return &seg_list_4;
-        case 5: return &seg_list_5;
-        case 6: return &seg_list_6;
-        case 7: return &seg_list_7;
-        case 8: return &seg_list_8;
-        default: return &seg_list_8;
+static char **_get_bucket(int index)
+{
+    switch (index)
+    {
+    case 0:
+        return &seg_list_0;
+    case 1:
+        return &seg_list_1;
+    case 2:
+        return &seg_list_2;
+    case 3:
+        return &seg_list_3;
+    case 4:
+        return &seg_list_4;
+    case 5:
+        return &seg_list_5;
+    case 6:
+        return &seg_list_6;
+    case 7:
+        return &seg_list_7;
+    case 8:
+        return &seg_list_8;
+    default:
+        return &seg_list_8;
     }
 }

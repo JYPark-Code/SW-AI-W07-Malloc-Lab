@@ -60,8 +60,8 @@ team_t team = {
 #define SET_NEXT_FREE(p, val) (*(char **)((char *)(p) + 8) = (val)) /* free의 next값 SET */
 
 /* 방법 선택 - 하나만 주석 해제 */
-#define EXPLICIT
-// #define SEGLIST
+// #define EXPLICIT
+#define SEGLIST
 /* 없으면 implicit (현재) */
 
 /* fit 전략 선택 */
@@ -73,6 +73,17 @@ team_t team = {
 static char *heap_listp;
 #ifdef EXPLICIT
 static char *free_listp; // explicit free list 시작점
+#endif
+#ifdef SEGLIST
+static char *seg_list_0;  // 1  ~ 31
+static char *seg_list_1;  // 32 ~ 63
+static char *seg_list_2;  // 64   ~ 127
+static char *seg_list_3;  // 128  ~ 255
+static char *seg_list_4;  // 256  ~ 511
+static char *seg_list_5;  // 512  ~ 1023
+static char *seg_list_6;  // 1024 ~ 2047
+static char *seg_list_7;  // 2048 ~ 4095
+static char *seg_list_8;  // 4096 ~
 #endif
 
 /* forward declaration */
@@ -185,11 +196,17 @@ void *mm_realloc(void *ptr, size_t size)
 // 1. 빈 블록 탐색
 static void *find_fit(size_t size)
 {
-#ifdef EXPLICIT
+#ifdef SEGLIST
+#ifdef BEST_FIT
+    // seglist best fit (TODO)
+#else
+    // seglist first fit (TODO)
+#endif
+    return NULL;
+#elif defined(EXPLICIT)
 #ifdef BEST_FIT
     // explicit best fit (TODO)
-#elif defined(NEXT_FIT)
-    // explicit next fit (TODO)
+
 #else
     // explicit first fit (TODO)
     for (char *bp = free_listp; bp != NULL; bp = NEXT_FREE(bp))
@@ -204,8 +221,7 @@ static void *find_fit(size_t size)
 #else
 #ifdef BEST_FIT
     // implicit best fit (TODO)
-#elif defined(NEXT_FIT)
-    // implicit next fit (TODO)
+
 #else
     // implicit first fit (현재 코드)
     for (char *bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp))
@@ -221,7 +237,9 @@ static void *find_fit(size_t size)
 // 2. 블록 배치 (header/footer 업데이트)
 static void place(void *bp, size_t size)
 {
-#ifdef EXPLICIT
+#ifdef SEGLIST
+    // seglist place (TODO)
+#elif defined(EXPLICIT)
     // explicit place (TODO)
     /*
     1. remove_free(bp) — free list에서 제거
@@ -281,8 +299,9 @@ static void *extend_heap(size_t size)
     PUT(FTRP(bp), PACK(newsize, 0));
     PUT((char *)(FTRP(bp)) + 4, PACK(0, 1)); // 크기 0, allocated
 
-#ifdef EXPLICIT
-    // TODO: free list에 bp 추가
+#ifdef SEGLIST
+    return coalesce(bp);
+#elif defined(EXPLICIT)
     return coalesce(bp);
 #else
     return bp;
@@ -327,7 +346,9 @@ static void *_coalesce_blocks(void *ptr)
 // 5. coalesce 함수 분리
 static void *coalesce(void *ptr)
 {
-#ifdef EXPLICIT
+#ifdef SEGLIST
+    // seglist coalesce (TODO)
+#elif defined(EXPLICIT)
     // explicit coalesce (TODO) - free list 관리 + _coalesce_blocks 호출
     /* 여기도 케이스 4가지로 병합 */
 

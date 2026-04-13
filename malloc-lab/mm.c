@@ -189,8 +189,13 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
+    size_t prev_alloc = GET_PREV_ALLOC(HDRP(ptr));
     PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
     PUT(FTRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
+    if (prev_alloc){
+        SET_PREV_ALLOC(HDRP(ptr));
+    }
+    CLEAR_PREV_ALLOC(HDRP(NEXT_BLKP(ptr)));
     coalesce(ptr);
 }
 

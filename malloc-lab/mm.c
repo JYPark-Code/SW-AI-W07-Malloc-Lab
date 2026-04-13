@@ -43,7 +43,7 @@ team_t team = {
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 /* 새로 만든 매크로 */
-#define CHUNKSIZE (1 << 12) // 4096 bytes
+#define CHUNKSIZE (1 << 12) // 4096 bytes -> CHUCKSIZE를 바꾸어보면 ???
 #define MAX(x,y) ((x) > (y) ? (x) : (y))
 
 #define PACK(size, alloc) ((size | alloc))                       /* 메모리 사이즈와 점유 여부 - 하위 3비트는 비고, 최하위에 OR연산으로 점유 여부 표시 */

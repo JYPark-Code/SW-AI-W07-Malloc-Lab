@@ -193,7 +193,11 @@ void *mm_malloc(size_t size)
         return NULL;
     }
 
-    size_t asize = ALIGN(size + 8); // 실제 블록 크기
+    size_t asize = ALIGN(size + 8); // 실제 블럭 사이즈
+    // size_t asize = ALIGN(size + 4); // 실제 블럭 사이즈
+    // if (asize < 24){
+    //     asize = 24;
+    // } 
     void *bp = find_fit(asize);
 
     if (bp == NULL)
@@ -242,7 +246,11 @@ void *mm_realloc(void *ptr, size_t size)
     } 
     
     // 그냥 size는 payload의 크기이기에, 전체 블럭의 크기 기준으로 비교 필요
-    size_t asize = ALIGN(size + 8); 
+    size_t asize = ALIGN(size + 8);
+    // size_t asize = ALIGN(size + 4);
+    // if (asize < 24) {
+    //     asize = 24;
+    // }
 
     // 케이스 3: 새 크기 <= 현재 블록 크기
     if (asize <= GET_SIZE(HDRP(ptr))) 

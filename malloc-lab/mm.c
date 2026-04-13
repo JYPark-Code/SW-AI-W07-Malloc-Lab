@@ -231,8 +231,11 @@ void *mm_realloc(void *ptr, size_t size)
         size_t merged_size = GET_SIZE(HDRP(ptr)) + next_size;
 
         remove_free(next_bp, _get_bucket(_get_bucket_index(next_size)));
-        PUT(HDRP(ptr), PACK(merged_size, 1));
-        PUT(FTRP(ptr), PACK(merged_size, 1));
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(ptr));
+        PUT(HDRP(ptr), PACK(merged_size, 1) | prev_alloc_bit);
+        // PUT(FTRP(ptr), PACK(merged_size, 1));
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(ptr)));
+
         return ptr;
     }
 
@@ -332,7 +335,8 @@ static void place(void *bp, size_t size)
     if (old_size - size >= 24)
     {
         /* allocated 블록 footer만 제거하고, free 블록 footer는 유지 */
-        PUT(HDRP(bp), PACK(size, 1)); /* allocated 헤더 */
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp)); /* 기존 prev_alloc 비트 보존 (PUT으로 덮어씌워지기 전에) */
+        PUT(HDRP(bp), PACK(size, 1) | prev_alloc_bit); /* allocated 헤더 */
         // PUT(FTRP(bp), PACK(size, 1));
         PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0)); /* 나머지 블록 헤더 */
         PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0)); /* 나머지 블록 footer 유지 (free 블록)*/
@@ -343,7 +347,8 @@ static void place(void *bp, size_t size)
     }
     else
     {
-        PUT(HDRP(bp), PACK(old_size, 1));
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp)); /* 기존 prev_alloc 비트 보존 (PUT으로 덮어씌워지기 전에) */
+        PUT(HDRP(bp), PACK(old_size, 1) | prev_alloc_bit);
         // PUT(FTRP(bp), PACK(old_size, 1));
         SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     }
@@ -410,6 +415,7 @@ static void *extend_heap(size_t size)
 
     char *bp = raw;
     PUT(HDRP(bp), PACK(newsize, 0));
+    SET_PREV_ALLOC(HDRP(bp));
     PUT(FTRP(bp), PACK(newsize, 0));
     PUT((char *)(FTRP(bp)) + 4, PACK(0, 1)); // 크기 0, allocated
 
@@ -427,34 +433,44 @@ static void *extend_heap(size_t size)
 static void *_coalesce_blocks(void *ptr)
 {
     // 1. 양쪽이 다 점유되어있는 경우
-    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
+    // if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_PREV_ALLOC(HDRP(ptr)))
         return ptr;
 
     size_t curr_size = GET_SIZE(HDRP(ptr));
-    size_t prev_size = GET_SIZE(HDRP(_prev_blkp(ptr)));
     size_t next_size = GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+    size_t prev_size = 0; // 이전 블록이 allocated이면 병합 불필요, 0으로 초기화
+    if (!GET_PREV_ALLOC(HDRP(ptr))) {
+        // 이전 블록이 free인 경우에만 footer에서 크기 읽기
+        prev_size = GET_SIZE(HDRP(_prev_blkp(ptr)));
+    }
 
     // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
-    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(_prev_blkp(ptr))))
+    // if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(_prev_blkp(ptr))))
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_PREV_ALLOC(HDRP(ptr)))
     {
         size_t merge_size = curr_size + prev_size;
-        PUT(HDRP(_prev_blkp(ptr)), PACK(merge_size, 0));
+        size_t pp_alloc_bit = GET_PREV_ALLOC(HDRP(_prev_blkp(ptr)));
+        PUT(HDRP(_prev_blkp(ptr)), PACK(merge_size, 0) | pp_alloc_bit);
         PUT(FTRP(ptr), PACK(merge_size, 0));
         return _prev_blkp(ptr);
     }
 
     // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
-    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
+    // if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
+    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_PREV_ALLOC(HDRP(ptr)))
     {
         size_t merge_size = curr_size + next_size;
-        PUT(HDRP(ptr), PACK(merge_size, 0));
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(ptr));
+        PUT(HDRP(ptr), PACK(merge_size, 0) | prev_alloc_bit);
         PUT(FTRP(ptr), PACK(merge_size, 0));
         return ptr;
     }
 
     // 4. 양쪽 다 free인 경우.
     size_t merge_size = curr_size + prev_size + next_size;
-    PUT(HDRP(_prev_blkp(ptr)), PACK(merge_size, 0));
+    size_t pp_alloc_bit = GET_PREV_ALLOC(HDRP(_prev_blkp(ptr)));
+    PUT(HDRP(_prev_blkp(ptr)), PACK(merge_size, 0) | pp_alloc_bit);
     PUT(FTRP(_prev_blkp(ptr)), PACK(merge_size, 0));
     return _prev_blkp(ptr);
 }
@@ -465,7 +481,7 @@ static void *coalesce(void *ptr)
 #ifdef SEGLIST
     // seglist coalesce
     // 병합 전 각 블록의 버킷
-    char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(_prev_blkp(ptr)))));
+    // char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(_prev_blkp(ptr)))));
     char **curr_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(ptr))));
     char **next_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(NEXT_BLKP(ptr)))));
 
@@ -474,7 +490,8 @@ static void *coalesce(void *ptr)
     2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환
     */
 
-    unsigned int prev_get_alloc = GET_ALLOC(HDRP(_prev_blkp(ptr)));
+    // unsigned int prev_get_alloc = GET_ALLOC(HDRP(_prev_blkp(ptr)));
+    unsigned int prev_get_alloc = GET_PREV_ALLOC(HDRP(ptr));
     unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
 
     if (prev_get_alloc && next_get_alloc)
@@ -490,6 +507,7 @@ static void *coalesce(void *ptr)
     */
     if (next_get_alloc)
     {
+        char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(_prev_blkp(ptr)))));
         remove_free(_prev_blkp(ptr), prev_bucket);
         void *result = _coalesce_blocks(ptr);
         char **result_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(result))));
@@ -521,6 +539,7 @@ static void *coalesce(void *ptr)
     */
     else
     {
+        char **prev_bucket = _get_bucket(_get_bucket_index(GET_SIZE(HDRP(_prev_blkp(ptr)))));
         remove_free(_prev_blkp(ptr), prev_bucket);
         remove_free(NEXT_BLKP(ptr), next_bucket);
         void *result = _coalesce_blocks(ptr);
@@ -538,7 +557,8 @@ static void *coalesce(void *ptr)
     2. _coalesce_blocks(ptr) → 사실 병합 없음, ptr 그대로 반환
     */
 
-    unsigned int prev_get_alloc = GET_ALLOC(HDRP(_prev_blkp(ptr)));
+    // unsigned int prev_get_alloc = GET_ALLOC(HDRP(_prev_blkp(ptr)));
+    unsigned int prev_get_alloc = GET_PREV_ALLOC(HDRP(ptr));
     unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
 
     if (prev_get_alloc && next_get_alloc)

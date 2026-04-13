@@ -295,6 +295,28 @@ void *mm_realloc(void *ptr, size_t size)
         return prev_bp;
     }
 
+    // 4-3 : 이전 블록 & 다음 블록 free일 때
+    if (!GET_PREV_ALLOC(HDRP(ptr)) && !GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(_prev_blkp(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
+    {
+        char *next_bp = NEXT_BLKP(ptr);
+        char *prev_bp = _prev_blkp(ptr);
+
+        size_t next_size = GET_SIZE(HDRP(next_bp));
+        size_t prev_size = GET_SIZE(HDRP(_prev_blkp(ptr)));
+        size_t merged_size = GET_SIZE(HDRP(ptr)) + prev_size + next_size;
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(prev_bp));
+
+        remove_free(prev_bp, _get_bucket(_get_bucket_index(prev_size)));
+        remove_free(next_bp, _get_bucket(_get_bucket_index(next_size)));
+        
+        memmove(prev_bp, ptr, GET_SIZE(HDRP(ptr)) - 4);
+        PUT(HDRP(prev_bp), PACK(merged_size, 1) | prev_alloc_bit);
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(prev_bp)));
+
+        return prev_bp;
+    }
+
+
     // 케이스 5 (else): 기존 naive 코드
     void *oldptr = ptr;
     void *newptr;

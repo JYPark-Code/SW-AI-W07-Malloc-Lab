@@ -328,6 +328,10 @@ static void *find_fit(size_t size)
                 if (diff < best_diff) {
                     best = bp;
                     best_diff = diff;
+                    // fit이 딱 맞을 때 조기 종료.
+                    if (diff == 0){
+                        return best;
+                    }
                 }
             }
         }

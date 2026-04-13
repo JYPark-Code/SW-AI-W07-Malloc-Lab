@@ -295,7 +295,7 @@ void *mm_realloc(void *ptr, size_t size)
         return prev_bp;
     }
 
-    // 4-3 : 이전 블록 & 다음 블록 free일 때
+    // 케이스 4-3 : 이전 블록 & 다음 블록 free일 때
     if (!GET_PREV_ALLOC(HDRP(ptr)) && !GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(_prev_blkp(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
     {
         char *next_bp = NEXT_BLKP(ptr);

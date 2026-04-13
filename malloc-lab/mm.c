@@ -257,7 +257,7 @@ void *mm_realloc(void *ptr, size_t size)
     {
         return ptr;
     }
-    // 케이스 4: 다음 블록 free이고 합치면 충분
+    // 케이스 4-1 : 다음 블록 free이고 합치면 충분
     if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
     {
         char *next_bp = NEXT_BLKP(ptr);
@@ -271,6 +271,28 @@ void *mm_realloc(void *ptr, size_t size)
         SET_PREV_ALLOC(HDRP(NEXT_BLKP(ptr)));
 
         return ptr;
+    }
+
+    // 케이스 4-2: 이전 블록 free이고 합치면 충분
+    if (!GET_PREV_ALLOC(HDRP(ptr)) && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(_prev_blkp(ptr))) >= asize)
+    {
+        char *prev_bp = _prev_blkp(ptr);
+        size_t prev_size = GET_SIZE(HDRP(_prev_blkp(ptr)));
+        size_t merged_size = GET_SIZE(HDRP(ptr)) + prev_size;
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(prev_bp));
+
+        // 1. 이전 블록 free list에서 제거
+        remove_free(prev_bp, _get_bucket(_get_bucket_index(prev_size)));
+        // 2. 합친 크기 계산
+
+        // 3. memmove로 데이터 복사
+        memmove(prev_bp, ptr, GET_SIZE(HDRP(ptr)) - 4);
+        // 4. 헤더 업데이트
+        PUT(HDRP(prev_bp), PACK(merged_size, 1) | prev_alloc_bit);
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(prev_bp)));
+
+        // 5. return new_ptr
+        return prev_bp;
     }
 
     // 케이스 5 (else): 기존 naive 코드

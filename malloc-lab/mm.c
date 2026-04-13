@@ -326,10 +326,12 @@ static void place(void *bp, size_t size)
     size_t old_size = GET_SIZE(HDRP(bp));
     if (old_size - size >= 24)
     {
-        PUT(HDRP(bp), PACK(size, 1));
-        PUT(FTRP(bp), PACK(size, 1));
-        PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+        /* allocated 블록 footer만 제거하고, free 블록 footer는 유지 */
+        PUT(HDRP(bp), PACK(size, 1)); /* allocated 헤더 */
+        // PUT(FTRP(bp), PACK(size, 1));
+        PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0)); /* 나머지 블록 헤더 */
+        PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0)); /* 나머지 블록 footer 유지 (free 블록)*/
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp))); /* bp allocated -> 다음 블록에 저장 */
 
         char **remainder_bucket = _get_bucket(_get_bucket_index(old_size - size));
         insert_free(NEXT_BLKP(bp), remainder_bucket); // 나머지 블록
@@ -337,7 +339,8 @@ static void place(void *bp, size_t size)
     else
     {
         PUT(HDRP(bp), PACK(old_size, 1));
-        PUT(FTRP(bp), PACK(old_size, 1));
+        // PUT(FTRP(bp), PACK(old_size, 1));
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     }
 
 
@@ -354,16 +357,19 @@ static void place(void *bp, size_t size)
     if (old_size - size >= 24)
     {
         PUT(HDRP(bp), PACK(size, 1));
-        PUT(FTRP(bp), PACK(size, 1));
+        // PUT(FTRP(bp), PACK(size, 1));
         PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+
 
         insert_free(NEXT_BLKP(bp), &free_listp); // 나머지 블록
     }
     else
     {
         PUT(HDRP(bp), PACK(old_size, 1));
-        PUT(FTRP(bp), PACK(old_size, 1));
+        // PUT(FTRP(bp), PACK(old_size, 1));
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     }
 
 #else
@@ -372,14 +378,16 @@ static void place(void *bp, size_t size)
     if (old_size - size >= 16)
     {
         PUT(HDRP(bp), PACK(size, 1));
-        PUT(FTRP(bp), PACK(size, 1));
+        // PUT(FTRP(bp), PACK(size, 1));
         PUT(HDRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK((old_size - size), 0));
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     }
     else
     {
         PUT(HDRP(bp), PACK(old_size, 1));
-        PUT(FTRP(bp), PACK(old_size, 1));
+        // PUT(FTRP(bp), PACK(old_size, 1));
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     }
 #endif
 }

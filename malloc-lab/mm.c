@@ -80,6 +80,8 @@ static char *heap_listp;
 #ifdef EXPLICIT
 static char *free_listp; // explicit free list 시작점
 #endif
+
+/* 버킷 세분화*/
 #ifdef SEGLIST
 static char *seg_list_0; // 1  ~ 31
 static char *seg_list_1; // 32 ~ 63
@@ -90,6 +92,19 @@ static char *seg_list_5; // 512  ~ 1023
 static char *seg_list_6; // 1024 ~ 2047
 static char *seg_list_7; // 2048 ~ 4095
 static char *seg_list_8; // 4096 ~
+static char *seg_list_9; 
+static char *seg_list_10;
+static char *seg_list_11;
+static char *seg_list_12;
+static char *seg_list_13;
+static char *seg_list_14;
+static char *seg_list_15;
+static char *seg_list_16;
+static char *seg_list_17;
+static char *seg_list_18;
+static char *seg_list_19;
+
+
 #endif
 
 /* forward declaration */
@@ -137,6 +152,17 @@ int mm_init(void)
     seg_list_6 = NULL;
     seg_list_7 = NULL;
     seg_list_8 = NULL;
+    seg_list_9 = NULL;
+    seg_list_10 = NULL;
+    seg_list_11 = NULL;
+    seg_list_12 = NULL;
+    seg_list_13 = NULL;
+    seg_list_14 = NULL;
+    seg_list_15 = NULL;
+    seg_list_16 = NULL;
+    seg_list_17 = NULL;
+    seg_list_18 = NULL;
+    seg_list_19 = NULL;
 #endif
 
 #ifdef EXPLICIT
@@ -265,7 +291,7 @@ static void *find_fit(size_t size)
     char *best = NULL;
     size_t best_diff = SIZE_MAX; // 2^64 - 1 = 18446744073709551615UL
 
-    for(int i = _get_bucket_index(size); i <= 8; i++) {
+    for(int i = _get_bucket_index(size); i <= 19; i++) {
         for(char *bp = *_get_bucket(i); bp != NULL; bp = NEXT_FREE(bp)) {
             if (GET_SIZE(HDRP(bp)) >= size) {
                 size_t diff = GET_SIZE(HDRP(bp)) - size;
@@ -698,29 +724,51 @@ static void remove_free(void *bp, char **bucket)
 // 버킷 인덱스 반환 (GET)
 static int _get_bucket_index(size_t size)
 {
+    /* 버킷 세분화 후*/
+    if (size <= 24)  return 0;
+    if (size <= 32)  return 1; // +8
+    if (size <= 48)  return 2; // + 16
+    if (size <= 64)  return 3; // + 16
+    if (size <= 80)  return 4; // + 16
+    if (size <= 96)  return 5; // + 16
+    if (size <= 112) return 6; // + 16
+    if (size <= 128) return 7; // + 16
+    if (size <= 192) return 8; // + 64
+    if (size <= 256) return 9; // + 64
+    if (size <= 320)  return 10; // +64
+    if (size <= 384)  return 11; // +64
+    if (size <= 448)  return 12; // +64
+    if (size <= 512)  return 13; // +64
+    if (size <= 576)  return 14; // +64
+    if (size <= 768)  return 15; // +192
+    if (size <= 1024) return 16; // +256
+    if (size <= 2048) return 17; // +1024 
+    if (size <= 4096) return 18; // +1024
+    return 19;
+
     // size에 따라 0~8 반환
-    int index = 0;
+    // int index = 0;
 
-    if (size <= 32)
-    {
-        return index;
-    }
-    else
-    {
-        size = size >> 5;
-        while (size > 0)
-        {
-            size = (size >> 1);
-            index += 1;
-        }
+    // if (size <= 32)
+    // {
+    //     return index;
+    // }
+    // else
+    // {
+    //     size = size >> 5;
+    //     while (size > 0)
+    //     {
+    //         size = (size >> 1);
+    //         index += 1;
+    //     }
 
-        if (index > 8)
-        {
-            return 8;
-        }
+    //     if (index > 8)
+    //     {
+    //         return 8;
+    //     }
 
-        return index;
-    }
+    //     return index;
+    // }
 }
 
 /* 8. 인덱스를 받아서로 포인터를 반환하는 함수*/
@@ -746,8 +794,30 @@ static char **_get_bucket(int index)
         return &seg_list_7;
     case 8:
         return &seg_list_8;
+    case 9:
+        return &seg_list_9;
+    case 10:
+        return &seg_list_10;
+    case 11:
+        return &seg_list_11;
+    case 12:
+        return &seg_list_12;
+    case 13:
+        return &seg_list_13;
+    case 14:
+        return &seg_list_14;
+    case 15:
+        return &seg_list_15;
+    case 16:
+        return &seg_list_16;
+    case 17:
+        return &seg_list_17;
+    case 18:
+        return &seg_list_18;
+    case 19:
+        return &seg_list_19;
     default:
-        return &seg_list_8;
+        return &seg_list_19;
     }
 }
 

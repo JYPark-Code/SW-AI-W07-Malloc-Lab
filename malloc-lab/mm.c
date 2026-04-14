@@ -278,12 +278,12 @@ void *mm_realloc(void *ptr, size_t size)
     {
         char *prev_bp = _prev_blkp(ptr);
         size_t prev_size = GET_SIZE(HDRP(_prev_blkp(ptr)));
-        size_t merged_size = GET_SIZE(HDRP(ptr)) + prev_size;
         size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(prev_bp));
+        // 1. 합친 크기 계산
+        size_t merged_size = GET_SIZE(HDRP(ptr)) + prev_size;
 
-        // 1. 이전 블록 free list에서 제거
+        // 2. 이전 블록 free list에서 제거
         remove_free(prev_bp, _get_bucket(_get_bucket_index(prev_size)));
-        // 2. 합친 크기 계산
 
         // 3. memmove로 데이터 복사
         memmove(prev_bp, ptr, GET_SIZE(HDRP(ptr)) - 4);
@@ -294,6 +294,31 @@ void *mm_realloc(void *ptr, size_t size)
         // 5. return new_ptr
         return prev_bp;
     }
+
+    // 케이스 4-2-ext : 이전 블록 free + 힙 끝 + 이전 + 현재 부족
+    if (!GET_PREV_ALLOC(HDRP(ptr)) && GET_SIZE(HDRP(NEXT_BLKP(ptr))) == 0 && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(_prev_blkp(ptr))) < asize){
+        
+        char *prev_bp = _prev_blkp(ptr);
+        size_t prev_size = GET_SIZE(HDRP(_prev_blkp(ptr)));
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(prev_bp));
+
+        remove_free(prev_bp, _get_bucket(_get_bucket_index(prev_size)));
+
+        size_t extend_size = asize - GET_SIZE(HDRP(ptr)) - prev_size;
+        size_t merged_size = GET_SIZE(HDRP(ptr)) + prev_size + extend_size;
+
+        if (mem_sbrk(extend_size) == (void *)-1)
+            return NULL;
+
+        memmove(prev_bp, ptr, GET_SIZE(HDRP(ptr)) - 4);
+
+        PUT(HDRP(prev_bp), PACK(merged_size, 1) | prev_alloc_bit);
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(prev_bp)));
+        PUT(HDRP(NEXT_BLKP(prev_bp)), PACK(0, 1)); // 새 epilogue
+        return prev_bp;
+
+    }
+
 
     // 케이스 4-3 : 이전 블록 & 다음 블록 free일 때
     if (!GET_PREV_ALLOC(HDRP(ptr)) && !GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(_prev_blkp(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
@@ -314,6 +339,20 @@ void *mm_realloc(void *ptr, size_t size)
         SET_PREV_ALLOC(HDRP(NEXT_BLKP(prev_bp)));
 
         return prev_bp;
+    }
+
+    // 케이스 4-3-ext
+
+    // 케이스 4-4: 현재 블록이 힙 끝에 있으면 직접 확장
+    if (GET_SIZE(HDRP(NEXT_BLKP(ptr))) == 0) // 다음이 epilogue
+    {
+        size_t extend_size = asize - GET_SIZE(HDRP(ptr));
+        if (mem_sbrk(extend_size) == (void *)-1)
+            return NULL;
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(ptr));
+        PUT(HDRP(ptr), PACK(asize, 1) | prev_alloc_bit);
+        PUT(HDRP(NEXT_BLKP(ptr)), PACK(0, 1)); // 새 epilogue
+        return ptr;
     }
 
 

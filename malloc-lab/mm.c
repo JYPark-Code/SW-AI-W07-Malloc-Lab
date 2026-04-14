@@ -104,6 +104,11 @@ static char *seg_list_17;
 static char *seg_list_18;
 static char *seg_list_19;
 
+/* Binary Test를 최적화를 위한 미니 slab 구현 */
+static char *small_pool_24; // 24바이트 전용
+static char *big_pool_72;   // 72바이트 전용
+static char *big_pool_120;  // 120바이트 전용
+
 
 #endif
 
@@ -163,6 +168,11 @@ int mm_init(void)
     seg_list_17 = NULL;
     seg_list_18 = NULL;
     seg_list_19 = NULL;
+    
+    small_pool_24 = NULL;
+    big_pool_72 = NULL;   
+    big_pool_120 = NULL;  
+
 #endif
 
 #ifdef EXPLICIT
@@ -197,7 +207,82 @@ void *mm_malloc(size_t size)
     // size_t asize = ALIGN(size + 4); // 실제 블럭 사이즈
     // if (asize < 24){
     //     asize = 24;
-    // } 
+    // }
+
+    // 먼저 pool 체크
+    if (asize == 24){
+        // small_pool_24에서 꺼내기
+        if(small_pool_24 == NULL) {
+            
+            char *extended_h = mem_sbrk(24 * 64);
+            char *chunk = extended_h;
+            for (int i = 0; i < 64; i++) {
+                PUT(HDRP(chunk), PACK(24, 0)); // 헤더 작성
+                PUT(FTRP(chunk), PACK(24, 0)); // footer 작성
+                insert_free(chunk, &small_pool_24);
+                chunk = chunk + 24; // 다음 24바이트로 이동
+            }
+        } 
+        // 비어있으면 확장
+        /*
+        1. pool 리스트에서 블록 제거 (linked list에서 앞에서 꺼내기)
+        2. 헤더를 allocated로 업데이트
+        3. 다음 블록의 prev_alloc 비트 설정
+        */
+        
+        char *bp = small_pool_24;
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp));
+        remove_free(bp, &small_pool_24);
+        PUT(HDRP(bp), PACK(asize, 1) | prev_alloc_bit);
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+        return bp;
+        
+    }
+
+    if (asize == 72){
+
+        if(big_pool_72 == NULL) {
+            
+            char *extended_h = mem_sbrk(72 * 64);
+            char *chunk = extended_h;
+            for (int i = 0; i < 64; i++) {
+                PUT(HDRP(chunk), PACK(72, 0)); // 헤더 작성
+                PUT(FTRP(chunk), PACK(72, 0)); // footer 작성
+                insert_free(chunk, &big_pool_72);
+                chunk = chunk + 72; // 다음 72바이트로 이동
+            }
+        } 
+
+        char *bp = big_pool_72;
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp));
+        remove_free(bp, &big_pool_72);
+        PUT(HDRP(bp), PACK(asize, 1) | prev_alloc_bit);
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+        return bp;
+    }
+
+    if (asize == 120){
+
+        if(big_pool_120 == NULL) {
+            
+            char *extended_h = mem_sbrk(120 * 64);
+            char *chunk = extended_h;
+            for (int i = 0; i < 64; i++) {
+                PUT(HDRP(chunk), PACK(120, 0)); // 헤더 작성
+                PUT(FTRP(chunk), PACK(120, 0)); // footer 작성
+                insert_free(chunk, &big_pool_120);
+                chunk = chunk + 120; // 다음 120바이트로 이동
+            }
+        } 
+    
+        char *bp = big_pool_120;
+        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp));
+        remove_free(bp, &big_pool_120);
+        PUT(HDRP(bp), PACK(asize, 1) | prev_alloc_bit);
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+        return bp;
+    }   
+
     void *bp = find_fit(asize);
 
     if (bp == NULL)

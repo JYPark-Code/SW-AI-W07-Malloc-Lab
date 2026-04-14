@@ -254,7 +254,7 @@ void *mm_realloc(void *ptr, size_t size)
 
     // 케이스 3: 새 크기 <= 현재 블록 크기
     if (asize <= GET_SIZE(HDRP(ptr))) 
-    {
+    { 
         return ptr;
     }
     // 케이스 4-1 : 다음 블록 free이고 합치면 충분
@@ -558,7 +558,14 @@ static void place(void *bp, size_t size)
 static void *extend_heap(size_t size)
 {
     // size_t new_size = ALIGN(size) + 8;
-    size_t newsize = (size < CHUNKSIZE) ? CHUNKSIZE : size;
+    size_t newsize;
+    // 큰 요청이 와도 CHUNKSIZE 단위로 넉넉하게 확장
+    if (size < CHUNKSIZE) {
+        newsize = CHUNKSIZE;
+    } else {
+        newsize = size; // 여유있게 확장
+    }
+
     char *raw = (char *)mem_sbrk(newsize);
     // char *raw = (char *)mem_sbrk(size);
 
@@ -871,30 +878,6 @@ static int _get_bucket_index(size_t size)
     if (size <= 2048) return 17; // +1024 
     if (size <= 4096) return 18; // +1024
     return 19;
-
-    // size에 따라 0~8 반환
-    // int index = 0;
-
-    // if (size <= 32)
-    // {
-    //     return index;
-    // }
-    // else
-    // {
-    //     size = size >> 5;
-    //     while (size > 0)
-    //     {
-    //         size = (size >> 1);
-    //         index += 1;
-    //     }
-
-    //     if (index > 8)
-    //     {
-    //         return 8;
-    //     }
-
-    //     return index;
-    // }
 }
 
 /* 8. 인덱스를 받아서로 포인터를 반환하는 함수*/

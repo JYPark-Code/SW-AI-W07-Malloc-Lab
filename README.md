@@ -11,15 +11,19 @@
 Perf index = 52 (util) + 40 (thru) = 92/100
 ```
 
-| trace | 파일 | util | 비고 |
-|-------|------|------|------|
-| 0~3 | amptjp, cccp, cp-decl, expr | 99% | 일반 할당 패턴 |
-| 4 | coalescing-bal.rep | 66% | ALIGN 특성상 8바이트 낭비 (구조적 한계) |
-| 5~6 | random, random2 | 95%, 94% | 랜덤 패턴 |
-| 7 | binary-bal.rep | 60% | 외부 단편화 (구조적 한계) |
-| 8 | binary2-bal.rep | 53% | 외부 단편화 (구조적 한계) |
-| 9 | realloc-bal.rep | 99% | realloc 최적화 효과 |
-| 10 | realloc2-bal.rep | 87% | 힙 끝 확장 + 이전 블록 활용 |
+| trace | 파일 | util | thru | 총점 | 비고 |
+|-------|------|------|------|------|------|
+| 0 | amptjp-bal | 60 | 40 | **100** | 일반 할당 패턴 |
+| 1 | cccp-bal | 60 | 40 | **100** | 일반 할당 패턴 |
+| 2 | cp-decl-bal | 59 | 40 | **99** | 일반 할당 패턴 |
+| 3 | expr-bal | 60 | 40 | **100** | 일반 할당 패턴 |
+| 4 | coalescing-bal | 40 | 40 | **80** | ALIGN 특성상 8바이트 낭비 |
+| 5 | random-bal | 57 | 40 | **97** | 랜덤 패턴 |
+| 6 | random2-bal | 57 | 40 | **97** | 랜덤 패턴 |
+| 7 | binary-bal | 36 | 40 | **76** | 외부 단편화 (구조적 한계) |
+| 8 | binary2-bal | 32 | 40 | **72** | 외부 단편화 (구조적 한계) |
+| 9 | realloc-bal | 59 | 40 | **99** | realloc 최적화 효과 |
+| 10 | realloc2-bal | 52 | 40 | **92** | 힙 끝 확장 + 이전 블록 활용 |
 
 ---
 
@@ -29,10 +33,10 @@ Perf index = 52 (util) + 40 (thru) = 92/100
 
 ```c
 // #define EXPLICIT   // Explicit Free List
-// #define SEGLIST    // Segregated Free List
+#define SEGLIST       // Segregated Free List (최종 선택)
 // 둘 다 주석이면 Implicit Free List
 
-// #define BEST_FIT   // Best Fit
+#define BEST_FIT      // Best Fit (최종 선택)
 // 주석이면 First Fit
 ```
 
@@ -44,53 +48,53 @@ Perf index = 52 (util) + 40 (thru) = 92/100
 
 **초기 (Implicit)**
 ```
-┌────────┬─────────────────────────┬────────┐
-│header 4│       payload           │footer 4│
-└────────┴─────────────────────────┴────────┘
++--------+-------------------------+--------+
+|header 4|       payload           |footer 4|
++--------+-------------------------+--------+
 ```
 
 **Explicit 이후 (free 블록)**
 ```
-┌────────┬────────┬────────┬───────┬────────┐
-│header 4│ prev* 8│ next* 8│  ...  │footer 4│
-└────────┴────────┴────────┴───────┴────────┘
++--------+--------+--------+-------+--------+
+|header 4| prev* 8| next* 8|  ...  |footer 4|
++--------+--------+--------+-------+--------+
 최소 블록 = 4 + 8 + 8 + 4 = 24바이트
 ```
 
 **Footer 제거 후 (allocated 블록)**
 ```
-┌────────┬─────────────────────────┐
-│header 4│       payload           │  ← footer 없음!
-└────────┴─────────────────────────┘
++--------+-------------------------+
+|header 4|       payload           |  <- footer 없음!
++--------+-------------------------+
 ```
 
 ### 헤더 인코딩
 
 ```
 31                           3  2  1  0
-┌──────────────────────────┬──┬──┬──┬──┐
-│      size (29bit)        │  │  │ p│ a│
-└──────────────────────────┴──┴──┴──┴──┘
-                                  ↑  ↑
-                                  │  └── alloc: 현재 블록 할당 여부
-                                  └───── prev_alloc: 이전 블록 할당 여부
++---------------------------+--+--+--+--+
+|      size (29bit)         |  |  | p| a|
++---------------------------+--+--+--+--+
+                                  |  |
+                                  |  +-- alloc: 현재 블록 할당 여부
+                                  +----- prev_alloc: 이전 블록 할당 여부
 ```
 
 ### Segregated Free List 구조
 
 ```
-seg_list_0  ──→ [24] ──→ [24] ──→ NULL        (1~24)
-seg_list_1  ──→ [32] ──→ NULL                  (25~32)
-seg_list_2  ──→ [40] ──→ [48] ──→ NULL        (33~48)
+seg_list_0  --> [24] --> [24] --> NULL        (1~24)
+seg_list_1  --> [32] --> NULL                 (25~32)
+seg_list_2  --> [40] --> [48] --> NULL        (33~48)
     ...
-seg_list_19 ──→ [8192] ──→ NULL                (4097~)
+seg_list_19 --> [8192] --> NULL               (4097~)
 
 각 버킷 = address-ordered doubly linked list
 ```
 
 ---
 
-## 구현 진행 상황
+## 구현 체크리스트
 
 ### Implicit Free List
 - [x] 기본 블록 구조 (header / payload / footer)
@@ -120,22 +124,21 @@ seg_list_19 ──→ [8192] ──→ NULL                (4097~)
 - [x] place - 크기 기반 버킷 선택 + split
 
 ### mm_realloc 최적화
-- [x] 케이스 1: size == 0 → mm_free 후 NULL 반환
-- [x] 케이스 2: ptr == NULL → mm_malloc 반환
-- [x] 케이스 3: 새 크기 <= 현재 블록 크기 → ptr 반환
-- [x] 케이스 4-1: 다음 블록 free + 합치면 충분 → 병합 후 반환
-- [x] 케이스 4-2: 이전 블록 free + 합치면 충분 → memmove 후 반환
-- [x] 케이스 4-2-ext: 이전 free + 힙 끝 + 부족 → 병합하면서 힙 확장
-- [x] 케이스 4-3: 양쪽 블록 free + 합치면 충분 → 양쪽 병합
+- [x] 케이스 1: size == 0 -> mm_free 후 NULL 반환
+- [x] 케이스 2: ptr == NULL -> mm_malloc 반환
+- [x] 케이스 3: 새 크기 <= 현재 블록 크기 -> ptr 반환
+- [x] 케이스 4-1: 다음 블록 free + 합치면 충분 -> 병합 후 반환
+- [x] 케이스 4-2: 이전 블록 free + 합치면 충분 -> memmove 후 반환
+- [x] 케이스 4-2-ext: 이전 free + 힙 끝 + 부족 -> 병합하면서 힙 확장
+- [x] 케이스 4-3: 양쪽 블록 free + 합치면 충분 -> 양쪽 병합
 - [x] 케이스 4-3-ext: 이전 free + 힙 끝 + 부족 (양쪽 변형)
-- [x] 케이스 4-4: 현재 블록이 힙 끝 → mem_sbrk 직접 확장
+- [x] 케이스 4-4: 현재 블록이 힙 끝 -> mem_sbrk 직접 확장
 - [x] 케이스 5: naive (malloc + memcpy + free)
 
 ### 추가 최적화
 - [x] Best Fit (seglist) + 조기 종료 (diff == 0)
 - [x] Footer 제거 (allocated 블록) - prev_alloc 비트 활용
-- [x] 버킷 세분화 - 9개 → 20개 (24~576 구간 촘촘하게)
-- [x] CHUNKSIZE 튜닝 실험 - 4096 유지 (최적값 확인)
+- [x] 버킷 세분화 - 9개 -> 20개 (24~576 구간 촘촘하게)
 
 ---
 
@@ -146,81 +149,78 @@ seg_list_19 ──→ [8192] ──→ NULL                (4097~)
 | Implicit + First Fit | 75% | 22/40 | 67/100 |
 | Explicit + First Fit | 74% | 40/40 | 84/100 |
 | Seglist + First Fit | 74% | 40/40 | 85/100 |
-| Seglist + First Fit + realloc 최적화 | 79% | 40/40 | 87/100 |
-| Seglist + Best Fit + realloc 최적화 | 83% | 40/40 | 90/100 |
+| + realloc 최적화 (4-1, 4-2, 4-3) | 79% | 40/40 | 87/100 |
+| + Best Fit | 83% | 40/40 | 90/100 |
 | + Footer 제거 | 84% | 40/40 | 90/100 |
 | + 버킷 세분화(20개) + realloc 고도화 + best fit 조기 종료 | 86% | 40/40 | 91/100 |
-| + realloc 힙 끝 확장 (4-4) | 87% | 40/40 | **92/100** |
+| + realloc 힙 끝 확장 (4-2-ext, 4-3-ext, 4-4) | 87% | 40/40 | **92/100** |
 
 ---
 
-## 최적화 고민 과정
+## 최적화 과정
 
 ### 접근 방법
 
 ```
 점수 공식: P = 0.6 * U + 0.4 * min(1, T/Tlibc)
 
-Util(U) 최대 60점 → 메모리 효율
-Throughput(T) 최대 40점 → 속도
+Util(U) 최대 60점 -> 메모리 효율
+Throughput(T) 최대 40점 -> 속도
 ```
 
-Throughput은 Explicit 단계에서 이미 만점(40점) → 이후 모든 최적화는 **Util 개선**에 집중
+Throughput은 Explicit 단계에서 이미 만점(40점). 이후 모든 최적화는 **Util 개선**에 집중했다.
 
 ### 단계별 의사결정
 
 ```
 [67점] Implicit First Fit
-  ↓ free 블록도 순회하는 비효율
-[84점] Explicit First Fit  
-  ↓ 하나의 free list, 탐색 비효율
+  | free 블록도 전부 순회하는 비효율
+[84점] Explicit First Fit
+  | 하나의 free list, 탐색 비효율
 [85점] Seglist First Fit
-  ↓ first fit은 큰 블록 낭비
-[87점] + realloc 최적화
-  ↓ 단편화 문제 지속
+  | first fit은 큰 블록 낭비
+[87점] + realloc 최적화 (인접 블록 병합)
+  | 단편화 문제 지속
 [90점] + Best Fit
-  ↓ util 개선 여지
-[90점] + Footer 제거
-  ↓ 버킷 범위가 너무 넓음
+  | allocated 블록에 footer가 아직 남아있음
+[90점] + Footer 제거 (util 소폭 개선, 점수 동일)
+  | 버킷 범위가 너무 넓어 best fit 효과 반감
 [91점] + 버킷 세분화(20개) + realloc 고도화
-  ↓ realloc2 trace 힙 끝 패턴 미처리
-[92점] + realloc 힙 끝 직접 확장 (4-4)
+  | realloc 시 힙 끝 패턴 미처리
+[92점] + realloc 힙 끝 직접 확장 (4-2-ext, 4-3-ext, 4-4)
 ```
 
 ### 시행착오
 
 | 시도 | 결과 | 이유 |
 |------|------|------|
-| asize +4 (footer 제거 반영) | 실패 | `ALIGN(4095+4) = ALIGN(4095+8) = 4104` 동일 결과 |
-| CHUNKSIZE 2048 | 점수 하락 | trace 8 throughput 절반으로 감소 |
-| CHUNKSIZE 8192 | 점수 하락 | util 대폭 감소 |
+| asize +4 (footer 제거 반영) | 효과 없음 | `ALIGN(4095+4) = ALIGN(4095+8) = 4104` 동일 결과 |
+| CHUNKSIZE 2048 | 점수 하락 | throughput 절반으로 감소 |
+| CHUNKSIZE 8192 | 점수 하락 | util 대폭 감소 (힙 낭비) |
 | free 블록 footer 제거 | 효과 없음 | 최소 블록이 여전히 24바이트 |
-| Buddy System | 도입 안 함 | 내부 단편화 증가로 오히려 util 하락 |
+| Buddy System | 도입 안 함 | 내부 단편화 증가로 오히려 util 하락 예상 |
 | extend_heap CHUNKSIZE 배수 확장 | 점수 하락 | util 분모 증가로 역효과 |
-| realloc 케이스 3 split | 점수 변화 없음 | 크기 축소 realloc이 trace에서 드물게 발생 |
+| realloc 케이스 3 split | 변화 없음 | 크기 축소 realloc이 trace에서 드물게 발생 |
+| Slab-style Pool (24/72/120) | 90점으로 하락 | coalesce 경계 처리 복잡, binary trace util 감소 |
 
 ### 구조적 한계 분석
 
-**trace 4 (66%) 원인:**
+**coalescing-bal (80점) - ALIGN 패딩 낭비:**
 ```
-malloc(4095) → ALIGN(4095+8) = 4104
-malloc(4095) → ALIGN(4095+8) = 4104
-두 블록 free → 합쳐서 8208
-malloc(8190) → 필요: ALIGN(8190+8) = 8200
-남은 공간: 8208 - 8200 = 8바이트 → split 불가 (최소 24)
-→ 8바이트 낭비 반복
+malloc(4095) -> ALIGN(4095+8) = 4104
+malloc(4095) -> ALIGN(4095+8) = 4104
+두 블록 free -> 합쳐서 8208
+malloc(8190) -> 필요: ALIGN(8190+8) = 8200
+남은 공간: 8208 - 8200 = 8바이트 -> split 불가 (최소 24)
+-> 8바이트 낭비 반복
 ```
 
-**개선하려면:** 크기별 힙 분리(Slab allocator) 또는 4바이트 정렬 전환 필요
-
-**trace 7, 8 (60%, 53%) 원인:**
+**binary-bal/binary2-bal (76/72점) - 외부 단편화:**
 ```
 작은 블록(24)과 큰 블록(456, 120)이 번갈아 할당
 큰 블록 free 시 작은 블록이 중간에 끼어서 coalesce 차단
-→ 외부 단편화 반복
+-> 외부 단편화 반복, 크기별 힙 분리(Slab) 필요
 ```
-
-**개선하려면:** 크기별 힙 분리 또는 segregation policy 변경 필요
 
 ---
 
@@ -229,33 +229,34 @@ malloc(8190) → 필요: ALIGN(8190+8) = 8200
 ### coalesce 4가지 케이스
 
 ```
-케이스 1: [allocated][FREE][allocated]  → 그냥 삽입
-케이스 2: [free     ][FREE][allocated]  → 이전 블록과 병합
-케이스 3: [allocated][FREE][free     ]  → 다음 블록과 병합
-케이스 4: [free     ][FREE][free     ]  → 양쪽 모두 병합
+케이스 1: [allocated][FREE][allocated]  -> 그냥 삽입
+케이스 2: [free     ][FREE][allocated]  -> 이전 블록과 병합
+케이스 3: [allocated][FREE][free     ]  -> 다음 블록과 병합
+케이스 4: [free     ][FREE][free     ]  -> 양쪽 모두 병합
 ```
 
 ### prev_alloc 비트 활용 (Footer 제거)
 
 ```
-기존: 이전 블록 크기를 알려면 → 이전 블록 footer 읽기
+기존: 이전 블록 크기를 알려면 -> 이전 블록 footer 읽기
 개선: 현재 헤더의 bit1(prev_alloc)으로 판단
-  → prev_alloc=1: 이전 블록 allocated → coalesce 불필요
-  → prev_alloc=0: 이전 블록 free → footer에서 크기 읽기
+  -> prev_alloc=1: 이전 블록 allocated -> coalesce 불필요
+  -> prev_alloc=0: 이전 블록 free -> footer에서 크기 읽기
 ```
 
 ### mm_realloc 최적화 전략
 
 | 케이스 | 조건 | 동작 |
 |--------|------|------|
-| 1 | size == 0 | mm_free(ptr) → NULL 반환 |
+| 1 | size == 0 | mm_free(ptr) -> NULL 반환 |
 | 2 | ptr == NULL | mm_malloc(size) 반환 |
 | 3 | 현재 블록 크기 충분 | ptr 그대로 반환 |
-| 4-1 | 다음 블록 free + 합치면 충분 | remove_free + 헤더 업데이트 → ptr 반환 |
-| 4-2 | 이전 블록 free + 합치면 충분 | remove_free + memmove + 헤더 업데이트 → prev_bp 반환 |
-| 4-2-ext | 이전 free + 힙 끝 + 부족 | remove_free + mem_sbrk + memmove → prev_bp 반환 |
-| 4-3 | 양쪽 free + 합치면 충분 | remove_free x2 + memmove → prev_bp 반환 |
-| 4-4 | 현재 블록이 힙 끝 | mem_sbrk 직접 확장 → ptr 반환 |
+| 4-1 | 다음 블록 free + 합치면 충분 | remove_free + 헤더 업데이트 -> ptr |
+| 4-2 | 이전 블록 free + 합치면 충분 | remove_free + memmove -> prev_bp |
+| 4-2-ext | 이전 free + 힙 끝 + 부족 | 병합 + mem_sbrk 확장 -> prev_bp |
+| 4-3 | 양쪽 free + 합치면 충분 | remove_free x2 + memmove -> prev_bp |
+| 4-3-ext | 이전 free + 힙 끝 + 부족 (양쪽) | 병합 + mem_sbrk 확장 -> prev_bp |
+| 4-4 | 현재 블록이 힙 끝 | mem_sbrk 직접 확장 -> ptr |
 | 5 | 모두 해당 없음 | malloc + memcpy + free (naive) |
 
 ### Segregated Free List 버킷 구조
@@ -264,13 +265,13 @@ malloc(8190) → 필요: ALIGN(8190+8) = 8200
 버킷  범위          설계 의도
  0    1~24          최소 블록 전용
  1    25~32         +8 단위
- 2~7  33~128        +16 단위 (촘촘)
+ 2~7  33~128        +16 단위 (촘촘하게)
  8~14 129~576       +64 단위
  15   577~768       +192
  16   769~1024      +256
  17   1025~2048     +1024
  18   2049~4096     +2048
- 19   4097~          대형 블록
+ 19   4097~         대형 블록
 ```
 
 ---

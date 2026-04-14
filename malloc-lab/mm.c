@@ -66,11 +66,6 @@ team_t team = {
 #define SET_PREV_ALLOC(p) (*(unsigned int *)(p) |= 0X2U)  /* 이전 블록이 점유 됬다고 SET(값 저장) */
 #define CLEAR_PREV_ALLOC(p) (*(unsigned int *)(p) &= ~0X2U) /* 이전 블록을 초기화함 CLEAR(값 저장) */
 
-/* Pool, SegList 구분 */
-#define GET_POOL(p)   (*(unsigned int *)(p) & 0x4U)  // pool 블록인지?
-#define SET_POOL(p)   (*(unsigned int *)(p) |= 0x4U) // pool 블록으로 마킹
-#define CLEAR_POOL(p) (*(unsigned int *)(p) &= ~0x4U) // pool 마킹 제거
-
 /* 방법 선택 - 하나만 주석 해제 */
 // #define EXPLICIT
 #define SEGLIST
@@ -109,11 +104,6 @@ static char *seg_list_17;
 static char *seg_list_18;
 static char *seg_list_19;
 
-/* Binary Test를 최적화를 위한 미니 slab 구현 */
-static char *small_pool_24; // 24바이트 전용
-static char *big_pool_72;   // 72바이트 전용
-static char *big_pool_120;  // 120바이트 전용
-
 
 #endif
 
@@ -128,7 +118,6 @@ static void remove_free(void *bp, char **bucket);
 static int _get_bucket_index(size_t size);
 static char **_get_bucket(int index);
 static void *_prev_blkp(void *ptr);
-static void _init_pool(char **pool, size_t block_size, int count);
 
 /*
  * mm_init - initialize the malloc package.
@@ -141,8 +130,6 @@ int mm_init(void)
     /* 메모리 할당이 불가능할 때 */
     if (heap_listp == (void *)-1)
         return -1;
-
-
 
     // heap_listp + 0  → padding
     PUT((char *)(heap_listp), PACK(0, 0)); // padding
@@ -176,16 +163,6 @@ int mm_init(void)
     seg_list_17 = NULL;
     seg_list_18 = NULL;
     seg_list_19 = NULL;
-    
-    small_pool_24 = NULL;
-    big_pool_72 = NULL;   
-    big_pool_120 = NULL; 
-
-    /* 처음 풀에 추가하기 */
-    _init_pool(&small_pool_24, 24, 64);
-    _init_pool(&big_pool_72, 72, 64);
-    _init_pool(&big_pool_120, 120, 64);
-
 #endif
 
 #ifdef EXPLICIT
@@ -217,63 +194,10 @@ void *mm_malloc(size_t size)
     }
 
     size_t asize = ALIGN(size + 8); // 실제 블럭 사이즈
-    if (asize < 24){
-        asize = 24; // 최소 블록 크기: header(4) + prev_ptr(8) + next_ptr(8) + footer(4) = 24
-    }
-
-    // 먼저 pool 체크
-    if (asize == 24){
-        // small_pool_24에서 꺼내기
-        if(small_pool_24 == NULL) {
-            _init_pool(&small_pool_24, 24, 64);
-        } 
-        // 비어있으면 확장
-        /*
-        1. pool 리스트에서 블록 제거 (linked list에서 앞에서 꺼내기)
-        2. 헤더를 allocated로 업데이트
-        3. 다음 블록의 prev_alloc 비트 설정
-        */
-        
-        char *bp = small_pool_24;
-        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp));
-        remove_free(bp, &small_pool_24);
-        PUT(HDRP(bp), PACK(asize, 1) | prev_alloc_bit);
-        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
-        SET_POOL(HDRP(bp)); 
-        return bp;
-        
-    }
-
-    if (asize == 72){
-
-        if(big_pool_72 == NULL) {
-            _init_pool(&big_pool_72, 72, 64);
-        } 
-
-        char *bp = big_pool_72;
-        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp));
-        remove_free(bp, &big_pool_72);
-        PUT(HDRP(bp), PACK(asize, 1) | prev_alloc_bit);
-        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
-        SET_POOL(HDRP(bp)); 
-        return bp;
-    }
-
-    if (asize == 120){
-
-        if(big_pool_120 == NULL) {
-            _init_pool(&big_pool_120, 120, 64);
-        } 
-    
-        char *bp = big_pool_120;
-        size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(bp));
-        remove_free(bp, &big_pool_120);
-        PUT(HDRP(bp), PACK(asize, 1) | prev_alloc_bit);
-        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
-        SET_POOL(HDRP(bp)); 
-        return bp;
-    }   
-
+    // size_t asize = ALIGN(size + 4); // 실제 블럭 사이즈
+    // if (asize < 24){
+    //     asize = 24;
+    // } 
     void *bp = find_fit(asize);
 
     if (bp == NULL)
@@ -295,29 +219,6 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *ptr)
 {
-    size_t curr_size = GET_SIZE(HDRP(ptr));
-    
-    if (curr_size == 24 && GET_POOL(HDRP(ptr))){
-        PUT(HDRP(ptr), PACK(24, 0));
-        SET_POOL(HDRP(ptr));
-        insert_free(ptr, &small_pool_24);
-        return;
-    }
-
-    if (curr_size == 72 && GET_POOL(HDRP(ptr))){
-        PUT(HDRP(ptr), PACK(72, 0));
-        SET_POOL(HDRP(ptr));
-        insert_free(ptr, &big_pool_72);
-        return;
-    }
-
-    if (curr_size == 120 && GET_POOL(HDRP(ptr))){
-        PUT(HDRP(ptr), PACK(120, 0));
-        SET_POOL(HDRP(ptr));
-        insert_free(ptr, &big_pool_120);
-        return;
-    }
-
     size_t prev_alloc = GET_PREV_ALLOC(HDRP(ptr));
     PUT(HDRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
     PUT(FTRP(ptr), PACK(GET_SIZE(HDRP(ptr)), 0));
@@ -346,9 +247,10 @@ void *mm_realloc(void *ptr, size_t size)
     
     // 그냥 size는 payload의 크기이기에, 전체 블럭의 크기 기준으로 비교 필요
     size_t asize = ALIGN(size + 8);
-    if (asize < 24) {
-        asize = 24;
-    }
+    // size_t asize = ALIGN(size + 4);
+    // if (asize < 24) {
+    //     asize = 24;
+    // }
 
     // 케이스 3: 새 크기 <= 현재 블록 크기
     if (asize <= GET_SIZE(HDRP(ptr))) 
@@ -356,9 +258,7 @@ void *mm_realloc(void *ptr, size_t size)
         return ptr;
     }
     // 케이스 4-1 : 다음 블록 free이고 합치면 충분
-    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) 
-        && !GET_POOL(HDRP(NEXT_BLKP(ptr))) 
-        && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
+    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
     {
         char *next_bp = NEXT_BLKP(ptr);
         size_t next_size = GET_SIZE(HDRP(next_bp));
@@ -425,8 +325,7 @@ void *mm_realloc(void *ptr, size_t size)
 
     // 케이스 4-3 : 이전 블록 & 다음 블록 free일 때
     if (!GET_PREV_ALLOC(HDRP(ptr)) 
-        && !GET_ALLOC(HDRP(NEXT_BLKP(ptr)))
-        && !GET_POOL(HDRP(NEXT_BLKP(ptr)))
+        && !GET_ALLOC(HDRP(NEXT_BLKP(ptr))) 
         && (GET_SIZE(HDRP(ptr))) + GET_SIZE(HDRP(_prev_blkp(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr))) >= asize)
     {
         char *next_bp = NEXT_BLKP(ptr);
@@ -694,8 +593,7 @@ static void *_coalesce_blocks(void *ptr)
 {
     // 1. 양쪽이 다 점유되어있는 경우
     // if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
-    if ((GET_ALLOC(HDRP(NEXT_BLKP(ptr))) || GET_POOL(HDRP(NEXT_BLKP(ptr)))) 
-        && GET_PREV_ALLOC(HDRP(ptr)))
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_PREV_ALLOC(HDRP(ptr)))
         return ptr;
 
     size_t curr_size = GET_SIZE(HDRP(ptr));
@@ -708,7 +606,7 @@ static void *_coalesce_blocks(void *ptr)
 
     // 2. 한쪽만 점유되어있는 경우 (왼쪽, 이전)
     // if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_ALLOC(HDRP(_prev_blkp(ptr))))
-    if ((GET_ALLOC(HDRP(NEXT_BLKP(ptr))) || GET_POOL(HDRP(NEXT_BLKP(ptr)))) && !GET_PREV_ALLOC(HDRP(ptr)))
+    if (GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_PREV_ALLOC(HDRP(ptr)))
     {
         size_t merge_size = curr_size + prev_size;
         size_t pp_alloc_bit = GET_PREV_ALLOC(HDRP(_prev_blkp(ptr)));
@@ -719,8 +617,7 @@ static void *_coalesce_blocks(void *ptr)
 
     // 3. 한쪽만 점유되어있는 경우 (오른쪽, 다음)
     // if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_ALLOC(HDRP(_prev_blkp(ptr))))
-    if ((!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && !GET_POOL(HDRP(NEXT_BLKP(ptr)))) 
-        && GET_PREV_ALLOC(HDRP(ptr)))
+    if (!GET_ALLOC(HDRP(NEXT_BLKP(ptr))) && GET_PREV_ALLOC(HDRP(ptr)))
     {
         size_t merge_size = curr_size + next_size;
         size_t prev_alloc_bit = GET_PREV_ALLOC(HDRP(ptr));
@@ -755,18 +652,6 @@ static void *coalesce(void *ptr)
     // unsigned int prev_get_alloc = GET_ALLOC(HDRP(_prev_blkp(ptr)));
     unsigned int prev_get_alloc = GET_PREV_ALLOC(HDRP(ptr));
     unsigned int next_get_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
-
-    // 다음 블록이 pool 블록이면 병합하지 않음
-    if (GET_POOL(HDRP(NEXT_BLKP(ptr))))
-    {
-        next_get_alloc = 1;
-    }
-    // 이전 블록이 pool 블록이면 병합하지 않음
-    if (!GET_PREV_ALLOC(HDRP(ptr)) && GET_POOL(HDRP(_prev_blkp(ptr))))
-    {
-        prev_get_alloc = 1;
-        SET_PREV_ALLOC(HDRP(ptr)); // 실제 헤더도 동기화 (_coalesce_blocks가 헤더를 직접 읽으므로)
-    }
 
     if (prev_get_alloc && next_get_alloc)
     {
@@ -892,10 +777,7 @@ static void *coalesce(void *ptr)
 // 6. explicit coalesce를 위해 함수 분리
 /* free list에 삽입 */
 static void insert_free(void *bp, char **bucket)
-{   
-    assert(bp != NULL);
-    assert(GET_SIZE(HDRP(bp)) > 0);  // 크기 0이면 즉시 crash
-    assert(!GET_ALLOC(HDRP(bp)));    // allocated 블록이면 즉시 crash
+{
     char *curr = *bucket;
     char *prev = NULL;
 
@@ -931,7 +813,7 @@ static void insert_free(void *bp, char **bucket)
 
 /* free list에서 제거 */
 static void remove_free(void *bp, char **bucket)
-{   
+{
     /* coalesce와 똑같이 4가지 경우.
     1. prev 있고 next 있음 → 중간 제거
     2. prev 없고 next 있음 → 맨 앞 제거
@@ -1057,25 +939,5 @@ static void *_prev_blkp(void *ptr) {
     } else {
         // 이전 블록이 free → footer에서 크기 읽기
         return (char *)(ptr) - GET_SIZE(HDRP(ptr) - 4);
-    }
-}
-
-/* Slab Allocation 위해서 pool_init */
-static void _init_pool(char **pool, size_t block_size, int count) {
-    char *chunk = mem_sbrk(block_size * count);
-    // loop로 초기화 + insert_free
-    for (int i = 0; i <count; i++) {
-        PUT(HDRP(chunk), PACK(block_size, 0)); // 헤더 작성
-        SET_POOL(HDRP(chunk));
-        PUT(FTRP(chunk), PACK(block_size, 0)); // footer 작성
-        if (i == 0){
-            SET_PREV_ALLOC(HDRP(chunk));
-        }
-        // 마지막 블록 다음에 새 epilogue 작성
-        if (i == (count - 1)){
-            PUT(HDRP(NEXT_BLKP(chunk)), PACK(0, 1));
-        }
-        insert_free(chunk, pool);
-        chunk = chunk + block_size;
     }
 }
